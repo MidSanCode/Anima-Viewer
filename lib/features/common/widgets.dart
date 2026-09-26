@@ -261,15 +261,25 @@ class SmallTextButton extends StatelessWidget {
 }
 
 /// 键值行。
+///
+/// [labelKey] 与 [label] 二选一：前者是 i18n 键（会翻译），
+/// 后者是原样文本（引擎方法名、路径、外部标识符等**不得翻译**的内容）。
+/// 把非 i18n 内容传给 [labelKey] 会触发
+/// `Localization key [xxx] not found` 并把原始键直接显示到界面上。
 class KeyValueRow extends StatelessWidget {
   const KeyValueRow({
     super.key,
-    required this.labelKey,
+    this.labelKey,
+    this.label,
     required this.value,
     this.monospace = false,
-  });
+  }) : assert(
+         labelKey != null || label != null,
+         'KeyValueRow 需要 labelKey（i18n 键）或 label（原样文本）之一',
+       );
 
-  final String labelKey;
+  final String? labelKey;
+  final String? label;
   final String value;
   final bool monospace;
 
@@ -284,7 +294,7 @@ class KeyValueRow extends StatelessWidget {
           SizedBox(
             width: 108,
             child: Text(
-              labelKey.tr(),
+              label ?? labelKey!.tr(),
               style: TextStyle(fontSize: 11, color: tokens.divider),
             ),
           ),

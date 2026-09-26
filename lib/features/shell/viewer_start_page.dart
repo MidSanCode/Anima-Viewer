@@ -40,21 +40,28 @@ class ViewerStartPage extends ConsumerWidget {
                     color: Theme.of(context).colorScheme.primary,
                   ),
                   const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        'app.title'.tr(),
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
+                  // 必须 Expanded：Row 给非 flex 子项的横向约束是无限的，
+                  // 不加约束时 Text 不会换行，长文案会把 Row 撑破。
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'app.title'.tr(),
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                      Text(
-                        'app.description'.tr(),
-                        style: TextStyle(fontSize: 11.5, color: tokens.divider),
-                      ),
-                    ],
+                        Text(
+                          'app.description'.tr(),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: tokens.divider,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -196,20 +203,34 @@ class _ActionCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Icon(icon, size: 20),
-              const Spacer(),
-              Text(
-                titleKey.tr(),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+              // 卡片高度固定（96），内容必须能收缩：
+              // Expanded 吃掉图标之外的剩余高度，内层 Column 把文字压到底部，
+              // 副标题用 Flexible 兜住，文案变长时省略而不是溢出。
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      titleKey.tr(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Flexible(
+                      child: Text(
+                        subtitleKey.tr(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 10, color: tokens.divider),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitleKey.tr(),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 10, color: tokens.divider),
               ),
             ],
           ),
