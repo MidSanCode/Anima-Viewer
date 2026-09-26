@@ -878,6 +878,13 @@ class LocalAmEngine implements AmEngine, AmSceneProvider {
     if (dir.isEmpty) {
       throw const AmException('BAD_COMMAND', 'project.create needs dir');
     }
+    // 与契约适配器一致：不覆盖已有工程（不可逆的数据丢失）。
+    if (await AmprojWriter.isProjectDirectory(dir)) {
+      throw const AmException(
+        'PROJECT_EXISTS',
+        'target directory already contains a project',
+      );
+    }
     final info = AmprojWriter.freshInfo(
       name: '${p['name'] ?? 'project'}',
       displayName: '${p['display_name'] ?? ''}',

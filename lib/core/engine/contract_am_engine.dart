@@ -18,6 +18,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
+import '../project/amproj_writer.dart';
 import 'am_engine.dart';
 import 'am_scene_provider.dart';
 import 'am_types.dart';
@@ -323,16 +324,69 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
   // 工程
   // ---------------------------------------------------------------------------
 
+  /// 新建工程。
+  ///
+  /// 引擎的方法面里**没有** `project.create`（`am-format` 有 `Project::create`，
+  /// 但 `am_call` 没暴露它），不过 `project.new` + `project.save` 能拼出同样的
+  /// 结果，而且 spec 由**引擎**写出，宿主不必重复实现模型格式：
+  ///
+  /// 1. 宿主先落 `info.json` / `registry.json` —— 引擎的 `project.save` 在
+  ///    目标目录已存在时会走 `Project::open`，而它要求这两个文件；
+  /// 2. `project.new` 让引擎建一份空模型（画布默认 1280×720）；
+  /// 3. `project.save` 把完整 spec（含 `spec/model.json`）写盘。
+  ///
+  /// UI 侧只需照常调 `project.create`，内置实现与真引擎两条路径行为一致。
   Future<Map<String, Object?>> _projectCreate(Map<String, Object?> p) async {
-    // 引擎没有 project.create：宿主写一个空 spec，然后 project.load。
     final dir = '${p['dir'] ?? ''}';
     if (dir.isEmpty) {
       throw const AmException('BAD_COMMAND', 'project.create needs dir');
     }
-    throw const AmException(
-      'UNSUPPORTED',
-      'project scaffolding is host-side; use amproj writer then project.open',
+    final name = '${p['name'] ?? ''}';
+    // 目录里已经有工程就拒绝：下面会覆盖 info.json / registry.json / spec/，
+    // 那是不可逆的数据丢失（引擎的 Project::create 同样拒绝非空目录）。
+    if (await AmprojWriter.isProjectDirectory(dir)) {
+      throw const AmException(
+        'PROJECT_EXISTS',
+        'target directory already contains a project',
+      );
+    }
+    final info = AmprojWriter.freshInfo(
+      name: name,
+      displayName: '${p['display_name'] ?? ''}',
+      author: '${p['author'] ?? ''}',
+      description: '${p['description'] ?? ''}',
     );
+    // 名字非法时 AmprojWriter 抛 NAME_INVALID，与内置实现一致。
+    await AmprojWriter.createDirectory(dir, info: info);
+    await _call('project.new', <String, Object?>{
+      'name': name,
+      'width': 1280.0,
+      'height': 720.0,
+    });
+    // project.new 建出的模型没有任何节点，而内置实现的空工程带一个根部件
+    // （defaultAnimaDocument）—— 补上它，两条路径的新工程才一致。
+    await _call('doc.command', <String, Object?>{
+      'command': <String, Object?>{
+        'op': 'node_create',
+        'kind': 'part',
+        'name': 'Root',
+      },
+    });
+    await _call('project.save', <String, Object?>{'path': dir});
+    _projectPath = dir;
+    _projectName = name;
+    // 引擎的 project.load/save 都不回传 display_name，直接用刚写下的 info。
+    _displayName = info.displayName;
+    await _reloadSpec();
+    await _syncFromEngine();
+    return <String, Object?>{
+      'path': dir,
+      'name': name,
+      'display_name': _displayName,
+      'is_archive': false,
+      'files': 0,
+      'revision': _revision(),
+    };
   }
 
   Future<Map<String, Object?>> _projectOpen(Map<String, Object?> p) async {

@@ -37,6 +37,7 @@
   "engine.error.retry": "重试",
 
   "notice.project.created": "工程已创建",
+  "notice.project.exists": "该目录里已经有一个工程了，请另选一个目录",
   "notice.project.opened": "工程已打开",
   "notice.project.saved": "工程已保存",
   "notice.project.exported": "工程已导出",

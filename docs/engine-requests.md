@@ -40,6 +40,7 @@
 | `runtime.blink` / `breath` / `lipsync` | **无** | 宿主侧按 `EyeOpen` / `Breath` / `MouthOpen` 参数名写入 |
 | `physics.query` / `physics.set` | `physics.info` / `physics.step` / `physics.reset` | 开关与幅度为宿主侧状态 |
 | `project.export` / `project.import` | **无** | 宿主侧 `AmprojWriter` 处理 ZIP |
+| `project.create {dir, name, ...}` | `project.new` + `project.save` | 引擎无 `project.create`：宿主先写 `info.json`/`registry.json`，再让引擎建模型并写出 spec；之后补一个 `node_create` 根部件以对齐内置实现 |
 | `renderer.create` / `destroy` / `frame` / `pick` / `measure` | **无** | 适配层在宿主侧模拟 |
 | `diagnostics.stats` | 直通 | 字段名拼成 `stat.<field>` 文案 |
 
@@ -50,8 +51,10 @@
 | 1 | 外部纹理桥 | 见第 1 节 | 暴露共享纹理句柄，或确认回读路径 |
 | 2 | `diagnostics.stats` 字段稳定性 | `nodes` / `parameters` / `textures` / `motions` / `expressions` / `physics` / `drawables` / `revision` / `dirty` / `frame` | 性能面板按 `stat.<field>` 取文案，请保持字段名稳定 |
 | 3 | 口型同步的音频喂入 | 引擎无音频接口 | 若引擎愿意接管，暴露 `runtime.lipsync {amplitude}`；否则维持宿主侧驱动 |
-| 4 | `project.load` 回传 `name` | 无 | 建议直接回传 `model.name` |
+| 4 | `project.load` / `project.save` 回传 `name` + `display_name` | 只有 `path/nodes/parameters/motions/expressions` | 回传 `model.name` 与 `info.display_name`，省掉宿主自己记名字 |
 | 5 | `doc.undo`/`doc.redo` 后的缓存失效 | 引擎行为正确 | 适配层已自行重拉 `project.spec`；若引擎能回传结构版本号可省一次拉取 |
+| 6 | 暴露 `project.create` | `am-format` 有 `Project::create` 但 `am_call` 没暴露 | 直接暴露建目录 + 空 spec 的方法，宿主就不必自己写 `info.json` |
+| 7 | `project.save {path}` 对已存在目录的语义 | 目录存在 → `Project::open`（要求 `info.json`，否则报错）；不存在 → `Project::create` | 建议目录存在但为空时也走 `Project::create` |
 
 已确认的语义：
 

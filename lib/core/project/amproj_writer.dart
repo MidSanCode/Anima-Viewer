@@ -90,6 +90,13 @@ class AmprojWriter {
     );
   }
 
+  /// 目标目录是否已经是一个工程（存在 `info.json`）。
+  ///
+  /// 新建工程前用它兜底：覆盖别人的 `info.json` / `registry.json` / `spec/`
+  /// 是不可逆的数据丢失，宁可报错让用户另选目录。
+  static Future<bool> isProjectDirectory(String directory) =>
+      AmFileSystem.isFile('$directory/info.json');
+
   static Future<void> writeInfo(String directory, AmprojInfo info) =>
       AmFileSystem.writeText('$directory/info.json', encodeJson(info.toJson()));
 

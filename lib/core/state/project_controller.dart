@@ -145,7 +145,12 @@ class ProjectController extends Notifier<ProjectState> {
           );
       return true;
     } on AmException catch (error) {
-      _noticeError('project.create', error);
+      // 目录里已有工程时给一条明确的提示，而不是通用的「引擎调用失败」。
+      if (error.code == 'PROJECT_EXISTS') {
+        _notice('notice.project.exists');
+      } else {
+        _noticeError('project.create', error);
+      }
       state = state.copyWith(busy: false);
       return false;
     }

@@ -51,11 +51,17 @@ UI 面板 ──► ContractAmEngine ──► am_call(engine, method, params_js
 | `runtime.play_motion` | `motion.play` |
 | `runtime.blink/breath/lipsync` | 引擎无此方法，**宿主侧**按参数名写 `runtime.set_param` |
 | `project.export/import` | 引擎无压缩包 API → 宿主侧 `AmprojWriter` |
+| `project.create {dir, name, …}` | 引擎无此方法 → 宿主写 `info.json`/`registry.json`，再 `project.new` + `doc.command(node_create)` + `project.save`；spec 由引擎写出，宿主不重复实现模型格式 |
 | `physics.query/set` | 宿主侧状态 + `physics.info/step/reset` |
 | `diagnostics.stats` | 直通；字段名拼成 `stat.<field>` 文案 |
 
 引擎不可用时：`engine_bootstrap.dart` 返回内置实现并给出
 `warningKey = 'engine.warning.fallback'`，界面显示横幅；**任何路径都不抛给 UI**。
+
+新建工程在目标目录已存在 `info.json` 时抛 `PROJECT_EXISTS` 拒绝覆盖
+（覆盖 `info.json` / `registry.json` / `spec/` 不可逆），
+`ProjectController` 把它转成 `notice.project.exists` 提示；
+内置实现与真引擎两条路径行为一致。
 
 ## 画布
 

@@ -37,6 +37,7 @@
   "engine.error.retry": "Retry",
 
   "notice.project.created": "Project created",
+  "notice.project.exists": "That folder already contains a project; choose another one",
   "notice.project.opened": "Project opened",
   "notice.project.saved": "Project saved",
   "notice.project.exported": "Project exported",
