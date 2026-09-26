@@ -1,6 +1,7 @@
 /// 统一主题：暗色为默认（A0-6），并提供紧凑的编辑工具视觉密度。
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// 设计令牌（颜色/尺寸/动效）。
@@ -165,6 +166,7 @@ class AppTheme {
       visualDensity: VisualDensity.compact,
       extensions: <ThemeExtension<dynamic>>[tokens],
       fontFamily: null,
+      typography: _compactTypography(kTextScaleFactor),
     );
 
     return base.copyWith(
@@ -225,7 +227,30 @@ class AppTheme {
           border: Border.all(color: tokens.divider),
         ),
       ),
-      textTheme: base.textTheme.apply(fontSizeFactor: 0.95),
+    );
+  }
+
+  /// 全局字号缩放（正文整体略小，编辑工具信息密度更高）。
+  static const double kTextScaleFactor = 0.95;
+
+  /// 构造缩放后的 [Typography]。
+  ///
+  /// **必须缩放 geometry 层**（`englishLike` / `dense` / `tall`）：
+  /// `ThemeData.textTheme` 在 `ThemeData.localize` 之前 `fontSize` 全为
+  /// `null`，对它调用 `apply(fontSizeFactor:)` 会直接触发断言
+  /// `fontSize != null || (fontSizeFactor == 1.0 && fontSizeDelta == 0.0)`，
+  /// 导致整个主题构造失败、应用起不来。
+  ///
+  /// `Theme.of(context)` 最终取的是
+  /// `theme.typography.geometryThemeFor(scriptCategory)`，
+  /// 所以缩放 geometry 既不会触发断言，又能真正生效。
+  static Typography _compactTypography(double factor) {
+    final base = Typography.material2021(platform: defaultTargetPlatform);
+    return Typography.material2021(
+      platform: defaultTargetPlatform,
+      englishLike: base.englishLike.apply(fontSizeFactor: factor),
+      dense: base.dense.apply(fontSizeFactor: factor),
+      tall: base.tall.apply(fontSizeFactor: factor),
     );
   }
 
