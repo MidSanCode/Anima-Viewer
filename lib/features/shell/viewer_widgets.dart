@@ -48,9 +48,8 @@ class NoticeBanner extends ConsumerWidget {
           titleKey: notice.messageKey,
           args: notice.args,
           message: notice.detail,
-          onDismiss: () => ref
-              .read(notificationsProvider.notifier)
-              .dismiss(notice.id ?? ''),
+          onDismiss: () =>
+              ref.read(notificationsProvider.notifier).dismiss(notice.id ?? ''),
         ),
       if (project.busy)
         LinearProgressIndicator(

@@ -118,7 +118,8 @@ class ViewerStartPage extends ConsumerWidget {
                           .read(settingsProvider.notifier)
                           .patch(
                             (s) => s.copyWith(
-                              recentProjects: s.withoutRecent(path)
+                              recentProjects: s
+                                  .withoutRecent(path)
                                   .recentProjects,
                             ),
                           ),

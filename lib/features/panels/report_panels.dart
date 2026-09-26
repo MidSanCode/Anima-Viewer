@@ -161,7 +161,9 @@ class ExportPanel extends ConsumerWidget {
                         dialogTitle: 'dialog.exportTo'.tr(),
                       );
                       if (directory == null || !context.mounted) return;
-                      await ref.read(projectProvider.notifier).export(
+                      await ref
+                          .read(projectProvider.notifier)
+                          .export(
                             outPath:
                                 '$directory${Platform.pathSeparator}model.amproj',
                           );
@@ -198,17 +200,21 @@ class ExportPanel extends ConsumerWidget {
         mimeType: 'application/zip',
       );
       if (target != null) {
-        ref.read(notificationsProvider.notifier).success(
-          'notice.project.exported',
-          args: <String, String>{'path': target},
-        );
+        ref
+            .read(notificationsProvider.notifier)
+            .success(
+              'notice.project.exported',
+              args: <String, String>{'path': target},
+            );
       }
     } on Object catch (error) {
-      ref.read(notificationsProvider.notifier).error(
-        'notice.error.commandFailed',
-        args: <String, String>{'op': 'runtime.package'},
-        detail: '$error',
-      );
+      ref
+          .read(notificationsProvider.notifier)
+          .error(
+            'notice.error.commandFailed',
+            args: <String, String>{'op': 'runtime.package'},
+            detail: '$error',
+          );
     }
   }
 
@@ -234,8 +240,10 @@ class ExportPanel extends ConsumerWidget {
     if (assetsDir.existsSync()) {
       for (final entity in assetsDir.listSync(recursive: true)) {
         if (entity is! File) continue;
-        final relative =
-            entity.path.replaceAll(r'\', '/').split('assets/').last;
+        final relative = entity.path
+            .replaceAll(r'\', '/')
+            .split('assets/')
+            .last;
         addFile('assets/$relative', entity.readAsBytesSync());
       }
     }
@@ -310,7 +318,8 @@ class IntegrationPanel extends ConsumerWidget {
     );
   }
 
-  String _cSnippet(String name) => '''
+  String _cSnippet(String name) =>
+      '''
 #include "anima_engine.h"
 
 int main(void) {
@@ -324,7 +333,8 @@ int main(void) {
 }
 ''';
 
-  String _dartSnippet(String name) => '''
+  String _dartSnippet(String name) =>
+      '''
 import 'package:anima_engine/anima_engine.dart';
 
 Future<void> main() async {
@@ -338,7 +348,8 @@ Future<void> main() async {
 }
 ''';
 
-  String _jsSnippet(String name) => '''
+  String _jsSnippet(String name) =>
+      '''
 import initAnima from './anima_engine.js';
 
 const engine = await initAnima({ width: 1280, height: 720 });

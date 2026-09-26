@@ -199,9 +199,7 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
         return _step(asDouble(p['dt'], 1 / 60));
       case 'runtime.seek':
         _motionTime = asDouble(p['time']);
-        await _call('runtime.set_time', <String, Object?>{
-          'time': _motionTime,
-        });
+        await _call('runtime.set_time', <String, Object?>{'time': _motionTime});
         await _syncFromEngine();
         return <String, Object?>{
           'time': _motionTime,
@@ -342,9 +340,7 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
     if (path.isEmpty) {
       throw const AmException('BAD_COMMAND', 'project.open needs path');
     }
-    final result = await _call('project.load', <String, Object?>{
-      'path': path,
-    });
+    final result = await _call('project.load', <String, Object?>{'path': path});
     _projectPath = path;
     await _reloadSpec();
     // 引擎的 project.load 不返回名字；从 spec.model.name 取。
@@ -410,7 +406,8 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
       'curves': <Object?>[
         for (final rawCurve in asJsonList(motion['curves']))
           <String, Object?>{
-            'param': '${asJsonMap(rawCurve)['parameter'] ?? asJsonMap(rawCurve)['param'] ?? ''}',
+            'param':
+                '${asJsonMap(rawCurve)['parameter'] ?? asJsonMap(rawCurve)['param'] ?? ''}',
             'keys': <Object?>[
               for (final rawKey in asJsonList(asJsonMap(rawCurve)['keys']))
                 <String, Object?>{
@@ -463,7 +460,8 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
       });
     final state = await _call('runtime.state');
     _clock = asDouble(state['time']);
-    _motionPlaying = asBool(state['paused']) == false &&
+    _motionPlaying =
+        asBool(state['paused']) == false &&
         '${state['motion'] ?? ''}'.isNotEmpty;
     _playingMotion = '${state['motion'] ?? ''}'.isEmpty
         ? null
@@ -527,10 +525,7 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
     final result = await _call(method);
     _cachedRevision = asInt(result['revision'], _cachedRevision);
     await _reloadSpec();
-    return <String, Object?>{
-      ...result,
-      'revision': _cachedRevision,
-    };
+    return <String, Object?>{...result, 'revision': _cachedRevision};
   }
 
   Map<String, Object?> _docQuery(Map<String, Object?> p) {
@@ -593,9 +588,7 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
   // 运行时
   // ---------------------------------------------------------------------------
 
-  Future<Map<String, Object?>> _applyParams(
-    Map<String, Object?> values,
-  ) async {
+  Future<Map<String, Object?>> _applyParams(Map<String, Object?> values) async {
     for (final entry in values.entries) {
       if (entry.key.isEmpty) continue;
       final result = await _call('runtime.set_param', <String, Object?>{
@@ -666,8 +659,10 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
       await _applyParamByName(<String>['Breath', 'breath'], value);
     }
     if (_lipsyncEnabled) {
-      await _applyParamByName(<String>['MouthOpen', 'mouth_open'],
-          _lipsyncAmplitude);
+      await _applyParamByName(<String>[
+        'MouthOpen',
+        'mouth_open',
+      ], _lipsyncAmplitude);
     }
   }
 
@@ -859,17 +854,14 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
     final drawables = <AmSceneDrawable>[];
     for (final raw in asJsonList(scene['drawables'])) {
       final d = asJsonMap(raw);
-      if (!asBool(d['visible'], true) ) continue;
+      if (!asBool(d['visible'], true)) continue;
       drawables.add(
         AmSceneDrawable(
           id: '${d['node'] ?? d['name']}',
           name: '${d['name'] ?? ''}',
           vertices: <Offset>[
             for (final v in asJsonList(d['vertices']))
-              Offset(
-                asDouble(asJsonMap(v)['x']),
-                asDouble(asJsonMap(v)['y']),
-              ),
+              Offset(asDouble(asJsonMap(v)['x']), asDouble(asJsonMap(v)['y'])),
           ],
           uvs: <Offset>[
             for (final v in asJsonList(d['uvs']))
@@ -882,9 +874,7 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
           drawOrder: asInt(d['draw_order']),
           visible: true,
           locked: false,
-          mask: <String>[
-            for (final m in asJsonList(d['masks'])) '$m',
-          ],
+          mask: <String>[for (final m in asJsonList(d['masks'])) '$m'],
           selectedVertexIds: const <int>[],
         ),
       );

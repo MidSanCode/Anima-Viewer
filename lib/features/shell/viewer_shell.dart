@@ -51,17 +51,17 @@ class _ViewerShellState extends ConsumerState<ViewerShell>
       icon: Icons.emoji_emotions_outlined,
     ),
     _PanelSpec(id: 'params', titleKey: 'panel.parameter', icon: Icons.tune),
-    _PanelSpec(
-      id: 'effects',
-      titleKey: 'panel.physics',
-      icon: Icons.waves,
-    ),
+    _PanelSpec(id: 'effects', titleKey: 'panel.physics', icon: Icons.waves),
     _PanelSpec(
       id: 'performance',
       titleKey: 'panel.performance',
       icon: Icons.speed,
     ),
-    _PanelSpec(id: 'render', titleKey: 'viewer.render.title', icon: Icons.tonality),
+    _PanelSpec(
+      id: 'render',
+      titleKey: 'viewer.render.title',
+      icon: Icons.tonality,
+    ),
     _PanelSpec(
       id: 'export',
       titleKey: 'viewer.export.title',
@@ -171,8 +171,9 @@ class _ViewerShellState extends ConsumerState<ViewerShell>
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: <Widget>[
                                 Expanded(
-                                  child:
-                                      ViewerCanvas(boundaryKey: _boundaryKey),
+                                  child: ViewerCanvas(
+                                    boundaryKey: _boundaryKey,
+                                  ),
                                 ),
                                 _PanelColumn(
                                   panels: _panels,
@@ -230,10 +231,7 @@ class _ViewerShellState extends ConsumerState<ViewerShell>
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text('dialog.preferences'.tr()),
-        content: const SizedBox(
-          width: 380,
-          child: PreferencesBody(),
-        ),
+        content: const SizedBox(width: 380, child: PreferencesBody()),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
@@ -318,9 +316,7 @@ class _TopBar extends ConsumerWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              project.displayName ??
-                  project.name ??
-                  'app.title'.tr(),
+              project.displayName ?? project.name ?? 'app.title'.tr(),
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
@@ -335,7 +331,9 @@ class _TopBar extends ConsumerWidget {
               playback.playing ? Icons.pause : Icons.play_arrow,
               size: 18,
             ),
-            tooltip: playback.playing ? 'motion.pause'.tr() : 'motion.play'.tr(),
+            tooltip: playback.playing
+                ? 'motion.pause'.tr()
+                : 'motion.play'.tr(),
             onPressed: playback.motion == null
                 ? null
                 : () {

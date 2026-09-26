@@ -15,9 +15,8 @@ Future<void> main() async {
   await EasyLocalization.ensureInitialized();
 
   // A0-5：任何未捕获的构建异常都给出可读提示，而不是白屏。
-  ErrorWidget.builder = (FlutterErrorDetails details) => _FallbackError(
-    message: details.exceptionAsString(),
-  );
+  ErrorWidget.builder = (FlutterErrorDetails details) =>
+      _FallbackError(message: details.exceptionAsString());
 
   runApp(
     ProviderScope(
@@ -58,10 +57,7 @@ class _FallbackError extends StatelessWidget {
             Text(
               'ui.renderError'.tr(),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFFE6E6E6),
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: Color(0xFFE6E6E6), fontSize: 12),
             ),
             const SizedBox(height: 8),
             Flexible(

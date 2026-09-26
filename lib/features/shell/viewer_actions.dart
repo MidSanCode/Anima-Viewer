@@ -54,9 +54,7 @@ class ViewerActions {
       dialogTitle: 'dialog.importTarget'.tr(),
     );
     if (directory == null) return;
-    await ref
-        .read(projectProvider.notifier)
-        .importPackage(source, directory);
+    await ref.read(projectProvider.notifier).importPackage(source, directory);
   }
 
   /// 拖放打开：`.amproj` 文件或工程目录。
@@ -88,8 +86,11 @@ class ViewerActions {
 
   /// 从最近列表移除（设置层补丁的小包装，供 UI 复用）。
   static void forgetRecent(WidgetRef ref, String path) {
-    ref.read(settingsProvider.notifier).patch(
-          (s) => s.copyWith(recentProjects: s.withoutRecent(path).recentProjects),
+    ref
+        .read(settingsProvider.notifier)
+        .patch(
+          (s) =>
+              s.copyWith(recentProjects: s.withoutRecent(path).recentProjects),
         );
   }
 }

@@ -138,10 +138,9 @@ class _ViewerCanvasState extends ConsumerState<ViewerCanvas> {
 
   void _onPointerSignal(PointerSignalEvent event) {
     if (event is PointerScrollEvent) {
-      ref.read(viewportProvider.notifier).zoomAt(
-        event.localPosition,
-        event.scrollDelta.dy < 0 ? 1.1 : 0.9,
-      );
+      ref
+          .read(viewportProvider.notifier)
+          .zoomAt(event.localPosition, event.scrollDelta.dy < 0 ? 1.1 : 0.9);
     }
   }
 }
@@ -174,10 +173,8 @@ class _ViewerScenePainter extends CustomPainter {
         ..strokeWidth = 1;
       final spacing = 50 * viewport.zoom;
       if (spacing >= 4) {
-        final originX =
-            size.width / 2 + viewport.pan.dx * viewport.zoom;
-        final originY =
-            size.height / 2 - viewport.pan.dy * viewport.zoom;
+        final originX = size.width / 2 + viewport.pan.dx * viewport.zoom;
+        final originY = size.height / 2 - viewport.pan.dy * viewport.zoom;
         var x = originX % spacing;
         while (x < size.width) {
           canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);

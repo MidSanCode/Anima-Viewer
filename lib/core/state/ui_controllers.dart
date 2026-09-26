@@ -35,7 +35,12 @@ class NotificationsController extends Notifier<List<Notice>> {
   @override
   List<Notice> build() => <Notice>[];
 
-  void push(NoticeLevel level, String messageKey, {Map<String, String>? args, String? detail}) {
+  void push(
+    NoticeLevel level,
+    String messageKey, {
+    Map<String, String>? args,
+    String? detail,
+  }) {
     final notice = Notice(
       level: level,
       messageKey: messageKey,
@@ -49,8 +54,11 @@ class NotificationsController extends Notifier<List<Notice>> {
   void info(String messageKey, {Map<String, String>? args, String? detail}) =>
       push(NoticeLevel.info, messageKey, args: args, detail: detail);
 
-  void success(String messageKey, {Map<String, String>? args, String? detail}) =>
-      push(NoticeLevel.success, messageKey, args: args, detail: detail);
+  void success(
+    String messageKey, {
+    Map<String, String>? args,
+    String? detail,
+  }) => push(NoticeLevel.success, messageKey, args: args, detail: detail);
 
   void warn(String messageKey, {Map<String, String>? args, String? detail}) =>
       push(NoticeLevel.warning, messageKey, args: args, detail: detail);
@@ -59,7 +67,10 @@ class NotificationsController extends Notifier<List<Notice>> {
       push(NoticeLevel.error, messageKey, args: args, detail: detail);
 
   void dismiss(String id) {
-    state = <Notice>[for (final item in state) if (item.id != id) item];
+    state = <Notice>[
+      for (final item in state)
+        if (item.id != id) item,
+    ];
   }
 }
 
@@ -272,10 +283,8 @@ class ViewerPlaybackController extends Notifier<ViewerPlaybackState> {
   void setSpeed(double speed) =>
       state = state.copyWith(speed: speed.clamp(0.1, 8.0));
 
-  void setFade({double? inSeconds, double? outSeconds}) => state = state.copyWith(
-    fadeIn: inSeconds,
-    fadeOut: outSeconds,
-  );
+  void setFade({double? inSeconds, double? outSeconds}) =>
+      state = state.copyWith(fadeIn: inSeconds, fadeOut: outSeconds);
 
   /// 推进播放头；返回新时间。
   double advance(double dt) {

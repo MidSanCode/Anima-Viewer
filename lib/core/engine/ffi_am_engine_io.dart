@@ -34,10 +34,8 @@ typedef _CallDart =
 typedef _FreeStringNative = Void Function(Pointer<Utf8>);
 typedef _FreeStringDart = void Function(Pointer<Utf8>);
 
-typedef _FrameCopyNative =
-    Size Function(Pointer<Void>, Pointer<Uint8>, Size);
-typedef _FrameCopyDart =
-    int Function(Pointer<Void>, Pointer<Uint8>, int);
+typedef _FrameCopyNative = Size Function(Pointer<Void>, Pointer<Uint8>, Size);
+typedef _FrameCopyDart = int Function(Pointer<Void>, Pointer<Uint8>, int);
 
 typedef _VersionNative = Pointer<Utf8> Function();
 typedef _VersionDart = Pointer<Utf8> Function();
@@ -142,9 +140,13 @@ class FfiAmEngine implements AmEngine {
     try {
       return FfiAmEngine._(
         lib.lookupFunction<_NewEmptyNative, _NewEmptyDart>('am_engine_new'),
-        lib.lookupFunction<_FreeEngineNative, _FreeEngineDart>('am_engine_free'),
+        lib.lookupFunction<_FreeEngineNative, _FreeEngineDart>(
+          'am_engine_free',
+        ),
         lib.lookupFunction<_CallNative, _CallDart>('am_call'),
-        lib.lookupFunction<_FreeStringNative, _FreeStringDart>('am_string_free'),
+        lib.lookupFunction<_FreeStringNative, _FreeStringDart>(
+          'am_string_free',
+        ),
         lib.lookupFunction<_FrameCopyNative, _FrameCopyDart>('am_frame_copy'),
       );
     } on Object {

@@ -109,8 +109,9 @@ void main() {
     });
     final afterCreate = await engine!.call('doc.query', {'path': 'hierarchy'});
     expect(
-      asJsonMap(afterCreate['nodes']).values
-          .map((n) => '${asJsonMap(n)['name']}'),
+      asJsonMap(
+        afterCreate['nodes'],
+      ).values.map((n) => '${asJsonMap(n)['name']}'),
       contains('PartA'),
     );
 
@@ -118,8 +119,9 @@ void main() {
     await engine!.call('doc.undo');
     final afterUndo = await engine!.call('doc.query', {'path': 'hierarchy'});
     expect(
-      asJsonMap(afterUndo['nodes']).values
-          .map((n) => '${asJsonMap(n)['name']}'),
+      asJsonMap(
+        afterUndo['nodes'],
+      ).values.map((n) => '${asJsonMap(n)['name']}'),
       isNot(contains('PartA')),
     );
 

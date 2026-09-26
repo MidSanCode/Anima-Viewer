@@ -44,7 +44,8 @@ class MotionsPanel extends ConsumerWidget {
               duration: asDouble(asJsonMap(raw)['duration'], 3),
               loop: asBool(asJsonMap(raw)['loop'], true),
               selected: runtime.motion == '${asJsonMap(raw)['name'] ?? ''}',
-              playing: playback.playing &&
+              playing:
+                  playback.playing &&
                   playback.motion == '${asJsonMap(raw)['name'] ?? ''}',
               onPlay: (loop) {
                 final name = '${asJsonMap(raw)['name'] ?? ''}';
@@ -147,10 +148,7 @@ class _MotionTile extends StatelessWidget {
     return ListRow(
       selected: selected,
       trailing: IconButton(
-        icon: Icon(
-          playing ? Icons.pause_circle : Icons.play_circle,
-          size: 18,
-        ),
+        icon: Icon(playing ? Icons.pause_circle : Icons.play_circle, size: 18),
         tooltip: playing ? 'motion.pause'.tr() : 'motion.play'.tr(),
         onPressed: playing ? onPause : () => onPlay(loop),
       ),
