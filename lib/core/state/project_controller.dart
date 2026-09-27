@@ -1,8 +1,11 @@
 /// 工程层：新建 / 打开 / 保存 / 校验 / 导出 / 导入 / 最近列表 / 脏标记。
 library;
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../engine/am_engine.dart';
 import '../engine/am_types.dart';
 import '../project/amproj_fs.dart';
 import 'document_controller.dart';
@@ -94,7 +97,33 @@ class ProjectState {
 /// 工程控制器。
 class ProjectController extends Notifier<ProjectState> {
   @override
-  ProjectState build() => const ProjectState();
+  ProjectState build() {
+    // 引擎实例**真的**被换掉时（见 engine_providers.dart：只有「引擎模式」
+    // 变化才会走到这里），新实例上什么都没打开。界面这边的工程状态却还在，
+    // 于是「保存」会撞上 `PROJECT_NOT_OPEN` —— 看起来像“工程明明开着却说没
+    // 开”。这里把已打开的目录工程重新挂到新引擎上，让两边重新一致。
+    ref.listen<AmEngine>(engineProvider, (previous, next) {
+      if (previous == null || identical(previous, next)) return;
+      final current = state;
+      final path = current.projectDir;
+      if (path == null || current.sourceKind != 'directory') return;
+      unawaited(_reattach(path));
+    });
+    return const ProjectState();
+  }
+
+  /// 把已打开的目录模式工程重新装载到当前的引擎实例上。
+  Future<void> _reattach(String path) async {
+    try {
+      await ref.read(engineProvider).call('project.open', <String, Object?>{
+        'path': path,
+      });
+      await ref.read(documentProvider.notifier).load();
+      await ref.read(runtimeProvider.notifier).load();
+    } on AmException catch (error) {
+      _noticeError('project.open', error);
+    }
+  }
 
   void markDirty() {
     if (state.dirty) return;
@@ -334,6 +363,14 @@ class ProjectController extends Notifier<ProjectState> {
       ref.read(notificationsProvider.notifier).warn(key);
 
   void _noticeError(String method, AmException error) {
+    // `PROJECT_NOT_OPEN` 有专用文案（说清下一步怎么做）；其余走通用提示。
+    // 否则用户只会看到「引擎调用 project.save 失败（PROJECT_NOT_OPEN）」。
+    if (error.code == 'PROJECT_NOT_OPEN') {
+      ref
+          .read(notificationsProvider.notifier)
+          .warn('notice.project.notOpen', detail: error.message);
+      return;
+    }
     ref
         .read(notificationsProvider.notifier)
         .error(

@@ -976,7 +976,7 @@ class LocalAmEngine implements AmEngine, AmSceneProvider {
     if (dir == null) {
       throw const AmException(
         'PROJECT_NOT_OPEN',
-        'no directory-mode project is open; use save_as',
+        kProjectNotOpenMessage,
       );
     }
     document.applyDrawOrder();

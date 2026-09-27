@@ -38,6 +38,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
+import '../project/amproj_fs.dart';
 import '../project/amproj_reader.dart';
 import '../project/amproj_writer.dart';
 import 'am_engine.dart';
@@ -188,17 +189,28 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
       case 'project.validate':
         return _call('project.validate');
       case 'project.export':
-        // 真引擎没有包导出：先落盘，包导出由宿主（amproj 层）完成。
+        // 引擎没有包导出：先落盘（保证 `.amproj` 与编辑内容一致），再由宿主
+        // 打包。与内置实现 `_projectExport` 的行为一致，返回同样的
+        // `{path, sha256, entry_count, bytes}`。
         await _projectSave(const <String, Object?>{});
-        throw const AmException(
-          'UNSUPPORTED',
-          'archive export is host-side; use project.save + amproj writer',
+        return AmprojWriter.exportArchive(
+          _projectPath!,
+          outPath: p['out_path'] == null ? null : '${p['out_path']}',
+          skipValidation: asBool(p['skip_validation']),
         );
       case 'project.import':
-        throw const AmException(
-          'UNSUPPORTED',
-          'archive import is host-side; use project.open on extracted dir',
-        );
+        // 同样由宿主完成：解包到目标目录、校验，然后装载（与内置实现一致）。
+        final source = '${p['source'] ?? ''}';
+        final destination = '${p['dest'] ?? ''}';
+        if (source.isEmpty || destination.isEmpty) {
+          throw const AmException(
+            'BAD_COMMAND',
+            'project.import needs source and dest',
+          );
+        }
+        final imported = await AmprojWriter.importArchive(source, destination);
+        await _projectOpen(<String, Object?>{'path': destination});
+        return imported;
 
       // ----- doc -----
       case 'doc.command':
@@ -426,22 +438,36 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
     };
   }
 
-  /// 打开工程。
+  /// 打开工程（目录或 `.amproj` 压缩包）。
   ///
-  /// `project.load` 让引擎装载 spec（校验、求值都由它负责），随后
-  /// `project.spec` 把描述层取回来还原影子文档。宿主扩展通道
-  /// （`config.__host.doc`）存在时直接用原件，保证引擎表达不了的信息不丢。
+  /// 目录：`project.load` 让引擎装载 spec（校验、求值都由它负责），随后
+  /// `project.spec` 把描述层取回来还原影子文档。
+  /// 压缩包：引擎的 `Project::open` 只认目录（它会回 `不是目录`），所以先由
+  /// 宿主把它解到工程的 `work/` 下再按目录打开 —— 这也保证了“打开压缩包后
+  /// 继续编辑并保存”有落点。宿主扩展通道（`config.__host.doc`）存在时直接
+  /// 用原件，保证引擎表达不了的信息不丢。
   Future<Map<String, Object?>> _projectOpen(Map<String, Object?> p) async {
     final path = '${p['path'] ?? p['source'] ?? ''}';
     if (path.isEmpty) {
       throw const AmException('BAD_COMMAND', 'project.open needs path');
     }
-    final result = await _call('project.load', <String, Object?>{'path': path});
-    _projectPath = path;
+    // `.amproj` 是文件；引擎只认目录，先解包（Web 端没有目录路径，走内存入口）。
+    final isFile = path.isNotEmpty && await AmFileSystem.isFile(path);
+    String loadPath = path;
+    String? workDir;
+    if (isFile) {
+      workDir = await _extractArchive(path);
+      loadPath = workDir;
+    }
+    final result = await _call('project.load', <String, Object?>{
+      'path': loadPath,
+    });
+    // 目录工程直接写回原目录；压缩包则写回解包出来的目录。
+    _projectPath = loadPath;
     // 目录模式工程的 info.json 里有 display_name，引擎不返回它。
     String? displayName;
     try {
-      final project = await AmprojProject.open(path);
+      final project = await AmprojProject.open(loadPath);
       displayName = project.displayName;
     } on Object {
       // 非 amproj 目录（引擎原生工程）没有 info.json，不是错误。
@@ -459,11 +485,31 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
       'path': path,
       'name': _projectName,
       'display_name': _displayName,
-      'is_archive': false,
+      // 压缩包没有可直接回写的目录，UI 据此禁用「保存」并提示用另存为。
+      'is_archive': isFile,
       'files': asInt(result['nodes']) + asInt(result['parameters']),
       'revision': _revision(),
     };
   }
+
+  /// 把 `.amproj` 解包到工程旁的 `work/` 目录，返回该目录。
+  ///
+  /// 选择「包旁边」而不是系统临时目录：用户能看见、能清理，重启后也不会变成
+  /// 孤儿；`work/` 本身在导出时会被排除（见 `kAmprojEntryPrefixes`），
+  /// 所以不会被打进下一次导出的包里。
+  Future<String> _extractArchive(String path) async {
+    final separator = path.contains('\\') && !path.contains('/') ? r'\' : '/';
+    final lastSeparator = path.lastIndexOf(separator);
+    final parent = lastSeparator <= 0 ? '' : path.substring(0, lastSeparator);
+    final stem = path
+        .substring(lastSeparator + 1)
+        .replaceAll(RegExp(r'\.amproj$', caseSensitive: false), '');
+    final name = stem.isEmpty ? 'project' : stem;
+    final work = '$parent$separator$name.work';
+    await AmFileSystem.deleteRecursive(work);
+    return '${(await AmprojWriter.importArchive(path, work))['path']}';
+  }
+
 
   /// 从引擎取回描述层并重建影子文档。
   Future<void> _adoptSpec() async {
@@ -600,9 +646,12 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
     final saveAs = p['save_as'] == null ? null : '${p['save_as']}';
     final target = (saveAs == null || saveAs.isEmpty) ? _projectPath : saveAs;
     if (target == null) {
+      // 宿主永远会用 `save_as` 兜底，所以走到这里说明是本适配器与
+      // `ProjectState` 不同步（例如引擎被换掉而工程状态还在）。提示直接
+      // 指向可执行的下一步，而不是一句英文内部串。
       throw const AmException(
         'PROJECT_NOT_OPEN',
-        'no directory-mode project is open; use save_as',
+        '当前没有已打开的工程目录：请用「另存为」指定目录，或重新打开工程。',
       );
     }
     final result = await _call('project.save', <String, Object?>{

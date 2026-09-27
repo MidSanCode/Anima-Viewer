@@ -43,6 +43,7 @@
   "notice.project.saved": "工程已保存",
   "notice.project.exported": "工程已导出",
   "notice.project.imported": "工程已导入",
+  "notice.project.notOpen": "当前没有已打开的工程目录：请用「另存为」指定目录，或重新打开工程",
   "notice.project.webNoDirectory": "浏览器环境无法选择目录，请改用桌面版",
   "notice.project.validationIssues": "工程校验发现问题",
   "notice.project.exportRejected": "校验未通过，已拒绝导出",

@@ -12,6 +12,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 语言：`system` 表示跟随系统。
 const String kLocaleSystem = 'system';
 
+/// 引擎模式：`auto` 表示先试 FFI、失败再降级；`local` 表示强制内置实现。
+///
+/// 这两个值是 [engineBootProvider] 唯一关心的设置项 —— 改别的设置绝不能
+/// 把引擎实例换掉（否则会丢掉已打开的工程）。
+const String kEngineModeAuto = 'auto';
+const String kEngineModeLocal = 'local';
+
 /// 键盘绑定：动作 id → 组合键（如 `ctrl+z`）。
 typedef ShortcutBindings = Map<String, String>;
 
@@ -28,7 +35,7 @@ class AppSettings {
     this.snapEnabled = true,
     this.onionSkin = false,
     this.onionSkinFrames = 3,
-    this.engineMode = 'auto',
+    this.engineMode = kEngineModeAuto,
     this.devicePixelRatioOverride = 0,
     this.layoutJson,
     this.recentProjects = const <String>[],
@@ -172,7 +179,7 @@ class AppSettings {
       snapEnabled: json['snap'] != false,
       onionSkin: json['onion_skin'] == true,
       onionSkinFrames: (json['onion_skin_frames'] as num?)?.toInt() ?? 3,
-      engineMode: '${json['engine_mode'] ?? 'auto'}',
+      engineMode: '${json['engine_mode'] ?? kEngineModeAuto}',
       devicePixelRatioOverride:
           (json['device_pixel_ratio'] as num?)?.toDouble() ?? 0,
       layoutJson: json['layout'] as String?,

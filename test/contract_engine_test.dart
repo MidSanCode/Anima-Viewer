@@ -482,11 +482,77 @@ void main() {
 
   test('unsupported methods raise AmException, not crash', () async {
     if (engine == null) return;
-    try {
-      await engine!.call('project.import', {'source': 'x', 'dest': 'y'});
-      fail('expected AmException');
-    } on AmException catch (error) {
-      expect(error.code, 'UNSUPPORTED');
+    // 动作录制与未知方法确实是引擎没桥接的能力。
+    for (final method in <String>['motion.record.begin', 'no.such.method']) {
+      try {
+        await engine!.call(method);
+        fail('expected AmException for $method');
+      } on AmException catch (error) {
+        expect(error.code, 'UNSUPPORTED');
+      }
     }
+  });
+
+  test('project.export / project.import 由宿主完成，不再一律 UNSUPPORTED', () async {
+    if (engine == null) return;
+    final sandbox = Directory.systemTemp.createTempSync('anima-export-');
+    addTearDown(() {
+      if (sandbox.existsSync()) sandbox.deleteSync(recursive: true);
+    });
+    final dir = '${sandbox.path}${Platform.pathSeparator}proj';
+    await engine!.call('project.create', <String, Object?>{
+      'dir': dir,
+      'name': 'demo',
+    });
+    await engine!.call('project.save', <String, Object?>{'path': dir});
+
+    // 导出：宿主打包成 `.amproj` 并回传校验和（与内置实现同一份契约）。
+    final archive = '${sandbox.path}${Platform.pathSeparator}demo.amproj';
+    final exported = await engine!.call('project.export', <String, Object?>{
+      'out_path': archive,
+    });
+    expect(exported['path'], archive);
+    expect('${exported['sha256']}', isNotEmpty);
+    expect(File(archive).existsSync(), isTrue);
+
+    // 导入：解包到一个空目录后即可被再次打开。
+    final target = '${sandbox.path}${Platform.pathSeparator}restored';
+    final imported = await engine!.call('project.import', <String, Object?>{
+      'source': archive,
+      'dest': target,
+    });
+    expect(imported['path'], target);
+    expect(
+      Directory('$target/spec').existsSync() ||
+          Directory(target).listSync().isNotEmpty,
+      isTrue,
+    );
+  });
+
+  test('project.open 支持 .amproj 压缩包（查看器打开外发包的主路径）', () async {
+    if (engine == null) return;
+    final sandbox = Directory.systemTemp.createTempSync('anima-open-arc-');
+    addTearDown(() {
+      if (sandbox.existsSync()) sandbox.deleteSync(recursive: true);
+    });
+    final dir = '${sandbox.path}${Platform.pathSeparator}proj';
+    await engine!.call('project.create', <String, Object?>{
+      'dir': dir,
+      'name': 'demo',
+    });
+    await engine!.call('project.save', <String, Object?>{'path': dir});
+    final archive = '${sandbox.path}${Platform.pathSeparator}demo.amproj';
+    await engine!.call('project.export', <String, Object?>{'out_path': archive});
+
+    // 引擎本体只认目录；适配器必须先解包再装载，否则会撞上「不是目录」。
+    final opened = await engine!.call('project.open', <String, Object?>{
+      'path': archive,
+    });
+    expect(opened['is_archive'], isTrue);
+    expect('${opened['name']}', 'demo');
+    expect(
+      Directory('${sandbox.path}${Platform.pathSeparator}demo.work').existsSync(),
+      isTrue,
+    );
   });
 }

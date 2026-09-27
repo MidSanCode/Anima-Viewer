@@ -4,6 +4,13 @@
 /// 引擎实现见 [AmEngine] 的两个实现：FFI 动态库与内置降级实现。
 library;
 
+/// `PROJECT_NOT_OPEN` 的统一文案（可执行的中文提示，而不是英文内部串）。
+///
+/// 适配器与内置实现在同一个失败分支上共用它，保证两条路径给用户看到的是
+/// 同一句能照着做的话：要么换「另存为」指定目录，要么重新打开工程。
+const String kProjectNotOpenMessage =
+    '当前没有已打开的工程目录：请用「另存为」指定目录，或重新打开工程。';
+
 /// 引擎调用失败。`code` 与契约的 `error.code` 对齐（如 `UNSUPPORTED`、
 /// `PROJECT_NOT_OPEN`、`NO_ENGINE`）。
 class AmException implements Exception {

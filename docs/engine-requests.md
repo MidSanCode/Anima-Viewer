@@ -55,6 +55,20 @@
 | 5 | `doc.undo`/`doc.redo` 后的缓存失效 | 引擎行为正确 | 适配层已自行重拉 `project.spec`；若引擎能回传结构版本号可省一次拉取 |
 | 6 | 暴露 `project.create` | `am-format` 有 `Project::create` 但 `am_call` 没暴露 | 直接暴露建目录 + 空 spec 的方法，宿主就不必自己写 `info.json` |
 | 7 | `project.save {path}` 对已存在目录的语义 | 目录存在 → `Project::open`（要求 `info.json`，否则报错）；不存在 → `Project::create` | 建议目录存在但为空时也走 `Project::create` |
+| 8 | `project.load` 只接受**目录** | 传入 `.amproj` 文件时报 `-32603 非法工程: 不是目录`（查看器的「打开 / 拖入外包」正是这条路径） | 暴露 `Project::open_any`，或在 `project.load` 里按 `is_dir()` 自动分派 |
+| 9 | 包导出/导入没有引擎侧入口 | `project.export` / `project.import` 不在 `am_call` 方法表里 | 与第 8 条一并向宿主暴露 archive 能力 |
+
+### 已修复的宿主侧缺陷
+
+* **引擎实例被设置写入换掉**：`engineBootProvider` 原先 `await ref.watch(settingsProvider.future)`，
+  任何设置写入（打开/保存后写「最近打开」、网格/主题/语言/面板布局……）都会重建它并
+  换掉引擎实例，新实例上没有已打开的工程 → 下一次「保存」失败成 `PROJECT_NOT_OPEN`。
+  现在只 `selectAsync` 出 `engineMode`，并在 `ProjectController` 里监听引擎实例变化重挂载兜底。
+* **打开 `.amproj` 压缩包**：适配器原先把文件路径直接交给 `project.load`，必然失败；现在先
+  解包到包旁的 `<name>.work/` 再按目录装载，`is_archive: true` 交给界面。
+* **`project.export` / `project.import` 恒抛 `UNSUPPORTED`**：FFI 路径下从未成功过；现由宿主
+  `AmprojWriter` 完成，返回与内置实现相同的 `{path, sha256, entry_count, bytes}`。
+* **`PROJECT_NOT_OPEN` 提示**：不再把英文内部串丢给用户，改为 i18n 的 `notice.project.notOpen`。
 
 已确认的语义：
 
