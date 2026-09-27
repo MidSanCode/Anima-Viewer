@@ -24,7 +24,13 @@
 
   "settings.section.language": "Language",
   "settings.section.theme": "Theme",
+  "settings.theme.system": "System",
+  "settings.theme.light": "Light",
+  "settings.theme.dark": "Dark",
   "settings.section.render": "Rendering",
+  "settings.quality.low": "Low",
+  "settings.quality.medium": "Medium",
+  "settings.quality.high": "High",
   "settings.section.about": "About",
   "settings.language.system": "System",
   "settings.devicePixelRatio": "Device pixel ratio",

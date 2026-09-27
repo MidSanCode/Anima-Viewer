@@ -24,7 +24,13 @@
 
   "settings.section.language": "语言",
   "settings.section.theme": "主题",
+  "settings.theme.system": "跟随系统",
+  "settings.theme.light": "浅色",
+  "settings.theme.dark": "深色",
   "settings.section.render": "渲染",
+  "settings.quality.low": "低",
+  "settings.quality.medium": "中",
+  "settings.quality.high": "高",
   "settings.section.about": "关于",
   "settings.language.system": "跟随系统",
   "settings.devicePixelRatio": "设备像素比",
