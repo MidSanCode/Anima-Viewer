@@ -26,6 +26,14 @@ on:
         type: boolean
         default: true
 
+      # 勾选后把各平台**构建成功**的压缩包发布到 GitHub Releases。
+      # 标题与 tag 都用「版本号+构建数字」（如 0.1.0+1）；已存在的同名资产
+      # 会自动跳过，所以重复发布会补齐缺失的那些，不会报错。
+      publish_release:
+        description: '发布到 Releases（上传各平台压缩包）'
+        type: boolean
+        default: false
+
 # 同一分支只保留最新一次构建，避免排队堆积。
 concurrency:
   group: build-viewer-${{ github.ref }}
@@ -326,3 +334,88 @@ jobs:
           name: anima-viewer-Web
           path: anima-viewer-web-${{ env.BUILD_NAME }}.zip
           if-no-files-found: error
+
+  # 发布：把各平台**构建成功**的产物挂到 GitHub Release。
+  # 勾选 publish_release 才跑；标题与 tag 都是「版本号+构建数字」（如 0.1.0+1）。
+  # 已存在的同名资产跳过上传，所以重复发布会自动「补齐缺失的那个」，幂等。
+  release:
+    needs: [verify, windows, linux, macos, web]
+    # 触发条件：勾了发布开关，且至少勾了一个平台（否则没有任何产物可发）。
+    # 用 !cancelled() 而不是 !failure()：某个平台构建失败时，仍然把**成功**的
+    # 那些发出去；失败作业本身在运行页就是红的，不会看不见。
+    if: ${{ always() && !cancelled() && inputs.publish_release && (inputs.build_windows || inputs.build_linux || inputs.build_macos || inputs.build_web) }}
+    runs-on: ubuntu-latest
+    # 建 Release 需要写权限。只给这一条作业，其余作业仍是 contents: read。
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      # 各平台上传的 artifact 汇总到 dist/。merge-multiple 拍平目录层级，于是
+      # 所有包平铺在 dist/ 下，后面按 basename 判断重名。
+      # 一个产物都没有时这个 action 会报错，所以 continue-on-error，交给下一步
+      # 给出更清楚的提示。
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create release and upload packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          VER=$(grep '^version:' pubspec.yaml | head -n1 | sed 's/^version:[[:space:]]*//' | tr -d '\r')
+          case "$VER" in
+            *+*) VERSION="${VER%%+*}"; BUILD="${VER##*+}" ;;
+            *)   VERSION="$VER";       BUILD="" ;;
+          esac
+          if [ -n "$BUILD" ]; then TAG="${VERSION}+${BUILD}"; else TAG="$VERSION"; fi
+          echo "版本号 $VERSION / 构建号 $BUILD → tag $TAG"
+
+          mkdir -p dist
+          # 刻意不加 -maxdepth：万一以后某个 artifact 带了子目录，递归找出来
+          # 至少会尝试上传；加了限制则是静默漏掉，更难发现。
+          FILES=$(find dist -type f | sort)
+          if [ -z "$FILES" ]; then
+            echo "::error::dist/ 里没有任何产物，请确认至少有一个平台真的构建成功"
+            exit 1
+          fi
+          echo "本次可发布的产物："
+          echo "$FILES"
+
+          # 先确保 Release 存在。已存在就复用 —— gh release create 撞上同名 tag
+          # 会直接报错，不能无脑建。
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在，复用它并补齐缺失资产"
+          else
+            NOTES=$(printf 'Anima Viewer %s\n\n- commit: %s\n' "$TAG" "$GITHUB_SHA")
+            gh release create "$TAG" --title "$TAG" --target "$GITHUB_SHA" --notes "$NOTES"
+            echo "已创建 Release $TAG"
+          fi
+
+          EXISTING=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          if [ -n "$EXISTING" ]; then echo "该 Release 上已有的资产："; echo "$EXISTING"; fi
+
+          # 逐个判断重名，同名就跳过。
+          upload=()
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            name=$(basename "$f")
+            # 用 here-string 而不是管道：pipefail 下 grep -q 提前退出可能让 printf
+            # 收到 SIGPIPE，把「找到了」误判成「没找到」。
+            if grep -Fxq -- "$name" <<< "$EXISTING"; then
+              echo "跳过（同名资产已存在）：$name"
+              continue
+            fi
+            upload+=("$f")
+          done <<< "$FILES"
+
+          if [ ${#upload[@]} -eq 0 ]; then
+            echo "::notice::所有资产都已存在，无需上传"
+          else
+            echo "上传 ${#upload[@]} 个新资产"
+            gh release upload "$TAG" "${upload[@]}"
+            echo "::notice::Release $TAG 已更新"
+          fi
