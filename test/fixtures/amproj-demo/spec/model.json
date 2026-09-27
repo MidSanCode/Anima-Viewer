@@ -1,0 +1,126 @@
+{
+	"version": 1,
+	"id": "model-amproj-demo",
+	"name": "amproj-demo",
+	"canvas": {
+		"width": 1024.0,
+		"height": 1024.0,
+		"origin": {
+			"x": 0.0,
+			"y": 0.0
+		},
+		"pixels_per_unit": 1.0
+	},
+	"textures": [
+		{
+			"id": "tex-0",
+			"asset": "assets/images/body.png",
+			"width": 256,
+			"height": 256,
+			"atlas": false
+		}
+	],
+	"nodes": [
+		{
+			"id": "node-root",
+			"name": "Root",
+			"parent": null,
+			"visible": true,
+			"locked": false,
+			"draw_order": 0,
+			"kind": "part",
+			"drawable": null,
+			"warp": null,
+			"rotation": null,
+			"keyforms": {}
+		},
+		{
+			"id": "node-body",
+			"name": "Body",
+			"parent": "node-root",
+			"visible": true,
+			"locked": false,
+			"draw_order": 1,
+			"kind": "drawable",
+			"drawable": {
+				"texture": 0,
+				"uv_rect": null,
+				"mesh": {
+					"vertices": [
+						{
+							"x": -128.0,
+							"y": -128.0
+						},
+						{
+							"x": 128.0,
+							"y": -128.0
+						},
+						{
+							"x": 128.0,
+							"y": 128.0
+						},
+						{
+							"x": -128.0,
+							"y": 128.0
+						}
+					],
+					"uvs": [
+						{
+							"x": 0.0,
+							"y": 0.0
+						},
+						{
+							"x": 1.0,
+							"y": 0.0
+						},
+						{
+							"x": 1.0,
+							"y": 1.0
+						},
+						{
+							"x": 0.0,
+							"y": 1.0
+						}
+					],
+					"indices": [
+						0,
+						1,
+						2,
+						0,
+						2,
+						3
+					]
+				},
+				"opacity": 1.0,
+				"blend": "normal",
+				"masks": [],
+				"inverted_mask": false,
+				"culling": false
+			},
+			"warp": null,
+			"rotation": null,
+			"keyforms": {}
+		}
+	],
+	"parameters": [
+		{
+			"id": "AngleX",
+			"name": "Angle X",
+			"group": null,
+			"min": -30.0,
+			"max": 30.0,
+			"default": 0.0,
+			"keys": [
+				-30.0,
+				0.0,
+				30.0
+			],
+			"is_blend_shape": false,
+			"repeat": false,
+			"auto": false,
+			"weight": 1.0,
+			"comment": null
+		}
+	],
+	"parameter_groups": []
+}

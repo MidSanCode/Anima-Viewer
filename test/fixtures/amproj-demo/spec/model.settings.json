@@ -1,0 +1,21 @@
+{
+	"display_name": "AMPROJ Demo",
+	"default_motion": null,
+	"default_expression": null,
+	"physics": true,
+	"auto_blink": {
+		"enabled": true,
+		"interval": 4.0
+	},
+	"auto_breath": {
+		"enabled": true,
+		"period": 3.5
+	},
+	"lip_sync": {
+		"enabled": false,
+		"gain": 1.0
+	},
+	"parameter_defaults": {
+		"AngleX": 0.0
+	}
+}

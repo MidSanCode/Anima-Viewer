@@ -1,0 +1,14 @@
+{
+	"project": {
+		"name": "amproj-demo"
+	},
+	"canvas": {
+		"width": 1280,
+		"height": 720,
+		"unit": "px"
+	},
+	"settings": {
+		"language": "zh-CN",
+		"render_quality": "high"
+	}
+}

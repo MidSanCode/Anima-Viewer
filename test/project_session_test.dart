@@ -43,7 +43,7 @@ void main() {
 
     // 「打开 / 保存 / 导出」都会顺手写一次「最近打开」；网格 / 主题 / 语言 /
     // 面板布局同理。这些写入都不该牵动引擎。
-    await settings.patch((s) => s.withRecent(r'C:\tmp\a'));
+    await settings.patch((s) => s.withRecent('/tmp/anima-recent'));
     await settings.patch(
       (s) => s.copyWith(
         showGrid: true,

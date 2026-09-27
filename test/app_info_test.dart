@@ -25,8 +25,17 @@ void main() {
     final expectedVersion = parts.first;
     final expectedBuild = parts.length > 1 ? parts[1] : '';
 
-    expect(kAppVersion, expectedVersion);
-    expect(kAppBuildNumber, expectedBuild);
-    expect(kAppVersionWithBuild, declared);
+    // CI 用 `--dart-define=BUILD_VERSION/BUILD_NUMBER` 覆盖时不比对（见
+    // `app_info.dart`）：那种情况下构建号来自 CI，而 pubspec 仍是仓库内的
+    // 值，两者本就该不同。`flutter test` 不传这些 define，所以日常仍会守卫。
+    const injected = String.fromEnvironment('BUILD_VERSION');
+    if (injected.isEmpty) {
+      expect(kAppVersion, expectedVersion);
+    }
+    const injectedBuild = String.fromEnvironment('BUILD_NUMBER');
+    if (injected.isEmpty && injectedBuild.isEmpty) {
+      expect(kAppBuildNumber, expectedBuild);
+      expect(kAppVersionWithBuild, declared);
+    }
   });
 }

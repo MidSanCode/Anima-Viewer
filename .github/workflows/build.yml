@@ -1,0 +1,274 @@
+name: Build Anima Viewer
+
+# 手动触发（与参考工程 openfield-app 一致）。查看器目前只有桌面 + Web 工程，
+# 没有 android/ 与 ios/ 目录，所以平台开关就只有这四个。
+on:
+  workflow_dispatch:
+    inputs:
+      build_windows:
+        description: 'Windows (x64)'
+        type: boolean
+        default: true
+      build_linux:
+        description: 'Linux (x64)'
+        type: boolean
+        default: false
+      build_macos:
+        description: 'macOS (x64/ARM)'
+        type: boolean
+        default: false
+      build_web:
+        description: 'Web'
+        type: boolean
+        default: false
+      run_tests:
+        description: '先跑 flutter analyze + test'
+        type: boolean
+        default: true
+
+# 同一分支只保留最新一次构建，避免排队堆积。
+concurrency:
+  group: build-viewer-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # 钉住 Flutter 版本：构建产物可复现，也不会被上游 stable 更新悄悄改行为。
+  # 仓库本地开发用的就是 3.44.4（Dart SDK ^3.12.2）。
+  FLUTTER_VERSION: '3.44.4'
+
+  # 引擎动态库（可选）。引擎在**另一个仓库**里，本仓库的包默认**不含**
+  # `anima.dll` / `libanima.so`；此时应用自动降级到内置实现（功能完整、不崩溃，
+  # 见 lib/core/engine/engine_bootstrap.dart）。想让产物带上真引擎，在仓库
+  # Settings → Variables 里配置下列变量为「引擎库的直链」，构建时自动注入：
+  #   ENGINE_WINDOWS_URL / ENGINE_LINUX_URL / ENGINE_MACOS_URL
+  ENGINE_WINDOWS_URL: ${{ vars.ENGINE_WINDOWS_URL }}
+  ENGINE_LINUX_URL: ${{ vars.ENGINE_LINUX_URL }}
+  ENGINE_MACOS_URL: ${{ vars.ENGINE_MACOS_URL }}
+
+jobs:
+  # 先跑测试再打包：把「代码坏了」挡在制品之前。
+  # 注意工作目录是仓库根（不是子目录），因为 viewer/ 自身就是一个 git 仓库。
+  verify:
+    if: inputs.run_tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze
+      - name: Test
+        run: flutter test --reporter expanded
+
+  windows:
+    needs: verify
+    if: ${{ always() && !cancelled() && !failure() && inputs.build_windows }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: Read version from pubspec
+        shell: pwsh
+        run: |
+          $ver = (Select-String -Path pubspec.yaml -Pattern '^version: ').Line.Split(': ')[-1].Trim()
+          $parts = $ver.Split('+')
+          "BUILD_NAME=$($parts[0])"   >> $env:GITHUB_ENV
+          "BUILD_NUMBER=$($parts[1])" >> $env:GITHUB_ENV
+      - name: Write build config
+        shell: pwsh
+        run: |
+          # 应用内「关于」读的是这些 define（lib/core/platform/app_info.dart）。
+          # 用 --dart-define-from-file 而不是改仓库文件：同一次提交能产出
+          # 不同构建号的包，仓库保持干净。
+          @{
+            BUILD_VERSION = "$env:BUILD_NAME"
+            BUILD_NUMBER  = "$env:BUILD_NUMBER"
+          } | ConvertTo-Json -Compress | Set-Content config.json -Encoding utf8
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Build release
+        run: flutter build windows --release --build-name=$env:BUILD_NAME --build-number=$env:BUILD_NUMBER --dart-define-from-file=config.json
+      - name: Inject engine library (optional)
+        if: env.ENGINE_WINDOWS_URL != ''
+        shell: pwsh
+        run: |
+          # 引擎查找顺序包含「exe 同级目录」（ffi_am_engine_io.dart），放这里即可。
+          Invoke-WebRequest -Uri "$env:ENGINE_WINDOWS_URL" -OutFile "build\windows\x64\runner\Release\anima.dll"
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath anima-viewer-windows-$env:BUILD_NAME-portable.zip
+      - name: Build installer (Inno Setup)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          # 安装器是「锦上添花」：装不上 Inno Setup 也不该让整条流水线失败。
+          choco install innosetup --no-progress -y
+          $name = "赋灵 Anima Viewer"
+          $iss = @"
+          [Setup]
+          AppName=$name
+          AppVersion=$env:BUILD_NAME
+          DefaultDirName={autopf}\Anima Viewer
+          DefaultGroupName=$name
+          OutputDir=installer_output
+          OutputBaseFilename=anima-viewer-setup-$env:BUILD_NAME
+          UninstallDisplayIcon={app}\anima_viewer.exe
+          [Files]
+          Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+          "@
+          $iss | Out-File setup.iss -Encoding utf8
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" setup.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anima-viewer-Windows-portable
+          path: anima-viewer-windows-${{ env.BUILD_NAME }}-portable.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: ${{ hashFiles('installer_output/*.exe') != '' }}
+        with:
+          name: anima-viewer-Windows-installer
+          path: installer_output/*.exe
+
+  linux:
+    needs: verify
+    if: ${{ always() && !cancelled() && !failure() && inputs.build_linux }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: Read version from pubspec
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | cut -d' ' -f2)
+          echo "BUILD_NAME=${VER%%+*}"  >> $GITHUB_ENV
+          echo "BUILD_NUMBER=${VER##*+}" >> $GITHUB_ENV
+      - name: Write build config
+        run: |
+          cat > config.json <<EOF
+          {
+            "BUILD_VERSION": "$BUILD_NAME",
+            "BUILD_NUMBER": "$BUILD_NUMBER"
+          }
+          EOF
+      - name: Install system dependencies
+        run: |
+          # Flutter Linux 桌面工具链：clang/cmake/ninja/pkg-config + GTK3。
+          # libsecret / libasound2 供 shared_preferences 等插件链接。
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libsecret-1-dev libasound2-dev
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Build release
+        run: flutter build linux --release --build-name=$BUILD_NAME --build-number=$BUILD_NUMBER --dart-define-from-file=config.json
+      - name: Inject engine library (optional)
+        if: env.ENGINE_LINUX_URL != ''
+        run: |
+          curl -fsSL "$ENGINE_LINUX_URL" -o build/linux/x64/release/bundle/lib/libanima.so
+      - name: Package tarball
+        run: tar -czf anima-viewer-linux-${{ env.BUILD_NAME }}.tar.gz -C build/linux/x64/release/bundle .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anima-viewer-Linux
+          path: anima-viewer-linux-${{ env.BUILD_NAME }}.tar.gz
+          if-no-files-found: error
+
+  macos:
+    needs: verify
+    if: ${{ always() && !cancelled() && !failure() && inputs.build_macos }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: Read version from pubspec
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | cut -d' ' -f2)
+          echo "BUILD_NAME=${VER%%+*}"  >> $GITHUB_ENV
+          echo "BUILD_NUMBER=${VER##*+}" >> $GITHUB_ENV
+      - name: Write build config
+        run: |
+          cat > config.json <<EOF
+          {
+            "BUILD_VERSION": "$BUILD_NAME",
+            "BUILD_NUMBER": "$BUILD_NUMBER"
+          }
+          EOF
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Build release
+        run: flutter build macos --release --build-name=$BUILD_NAME --build-number=$BUILD_NUMBER --dart-define-from-file=config.json
+      - name: Inject engine library (optional)
+        if: env.ENGINE_MACOS_URL != ''
+        run: |
+          # dylib 放进 .app/Contents/Frameworks/：dyld 会在可执行文件同级与
+          # @rpath 下查找。先解析出真实 .app 名（不写死产物名）。
+          APP_DIR=$(ls -d build/macos/Build/Products/Release/*.app | head -n 1)
+          mkdir -p "$APP_DIR/Contents/Frameworks"
+          curl -fsSL "$ENGINE_MACOS_URL" -o "$APP_DIR/Contents/Frameworks/libanima.dylib"
+      - name: Package app bundle
+        run: |
+          cd build/macos/Build/Products/Release
+          # 用 glob 匹配 *.app，而不是写死 Runner.app / anima_viewer.app ——
+          # 改产品名也不会把打包这一步弄坏。
+          APP_NAME=$(ls -d *.app | head -n 1)
+          echo "packaging $APP_NAME"
+          zip -qry ../../../../../anima-viewer-macos-${{ env.BUILD_NAME }}.zip "$APP_NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anima-viewer-macOS
+          path: anima-viewer-macos-${{ env.BUILD_NAME }}.zip
+          if-no-files-found: error
+
+  web:
+    needs: verify
+    if: ${{ always() && !cancelled() && !failure() && inputs.build_web }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+      - name: Read version from pubspec
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | cut -d' ' -f2)
+          echo "BUILD_NAME=${VER%%+*}" >> $GITHUB_ENV
+      - name: Write build config
+        run: |
+          cat > config.json <<EOF
+          {
+            "BUILD_VERSION": "$BUILD_NAME",
+            "BUILD_NUMBER": ""
+          }
+          EOF
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Build web
+        # --no-wasm-dry-run：只出 JS 包，但兼容性扫描会顺着 dart:ffi /
+        # dart:html 一路报错。跳过扫描；反正也不产出 wasm 产物。
+        run: flutter build web --release --no-wasm-dry-run --dart-define-from-file=config.json
+      - name: Package zip
+        run: |
+          cd build/web
+          zip -r ../../anima-viewer-web-${{ env.BUILD_NAME }}.zip .
+          cd -
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anima-viewer-Web
+          path: anima-viewer-web-${{ env.BUILD_NAME }}.zip
+          if-no-files-found: error
