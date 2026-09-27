@@ -20,6 +20,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
     required this.danger,
     required this.gridLine,
     required this.guideLine,
+    required this.textMuted,
     required this.panelRadius,
     required this.gap,
   });
@@ -37,6 +38,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
   final Color danger;
   final Color gridLine;
   final Color guideLine;
+  final Color textMuted;
   final double panelRadius;
   final double gap;
 
@@ -54,6 +56,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
     danger: Color(0xFFE5544B),
     gridLine: Color(0x1FFFFFFF),
     guideLine: Color(0x66FF7AC6),
+    textMuted: Color(0xFF9AA1AD),
     panelRadius: 6,
     gap: 2,
   );
@@ -72,6 +75,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
     danger: Color(0xFFC43D34),
     gridLine: Color(0x22000000),
     guideLine: Color(0x66D63384),
+    textMuted: Color(0xFF5A6272),
     panelRadius: 6,
     gap: 2,
   );
@@ -91,6 +95,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
     Color? danger,
     Color? gridLine,
     Color? guideLine,
+    Color? textMuted,
     double? panelRadius,
     double? gap,
   }) => AppTokens(
@@ -107,6 +112,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
     danger: danger ?? this.danger,
     gridLine: gridLine ?? this.gridLine,
     guideLine: guideLine ?? this.guideLine,
+    textMuted: textMuted ?? this.textMuted,
     panelRadius: panelRadius ?? this.panelRadius,
     gap: gap ?? this.gap,
   );
@@ -132,6 +138,7 @@ class AppTokens extends ThemeExtension<AppTokens> {
       danger: Color.lerp(danger, other.danger, t)!,
       gridLine: Color.lerp(gridLine, other.gridLine, t)!,
       guideLine: Color.lerp(guideLine, other.guideLine, t)!,
+      textMuted: Color.lerp(textMuted, other.textMuted, t)!,
       panelRadius: panelRadius,
       gap: gap,
     );

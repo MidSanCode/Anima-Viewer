@@ -34,7 +34,7 @@ class SectionHeader extends StatelessWidget {
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.4,
-                color: tokens.divider,
+                color: tokens.textMuted,
               ),
             ),
           ),
@@ -69,7 +69,7 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            Icon(icon, size: 30, color: tokens.divider),
+            Icon(icon, size: 30, color: tokens.textMuted),
             const SizedBox(height: 10),
             Text(
               titleKey.tr(),
@@ -84,7 +84,7 @@ class EmptyState extends StatelessWidget {
               Text(
                 subtitleKey!.tr(),
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11, color: tokens.divider),
+                style: TextStyle(fontSize: 11, color: tokens.textMuted),
               ),
             ],
             if (action != null) ...<Widget>[
@@ -150,7 +150,7 @@ class LabeledSlider extends StatelessWidget {
                 child: Text(
                   value.toStringAsFixed(digits),
                   textAlign: TextAlign.right,
-                  style: TextStyle(fontSize: 11, color: tokens.divider),
+                  style: TextStyle(fontSize: 11, color: tokens.textMuted),
                 ),
               ),
               if (defaultValue != null)
@@ -173,7 +173,7 @@ class LabeledSlider extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                 suffix!,
-                style: TextStyle(fontSize: 10, color: tokens.divider),
+                style: TextStyle(fontSize: 10, color: tokens.textMuted),
               ),
             ),
         ],
@@ -213,10 +213,10 @@ class SmallIconButton extends StatelessWidget {
             icon,
             size: size,
             color: onPressed == null
-                ? tokens.divider.withValues(alpha: 0.4)
+                ? tokens.textMuted.withValues(alpha: 0.38)
                 : (selected
                       ? Theme.of(context).colorScheme.primary
-                      : tokens.divider),
+                      : tokens.textMuted),
           ),
         ),
       ),
@@ -296,7 +296,7 @@ class KeyValueRow extends StatelessWidget {
             width: 108,
             child: Text(
               label ?? labelKey!.tr(),
-              style: TextStyle(fontSize: 11, color: tokens.divider),
+              style: TextStyle(fontSize: 11, color: tokens.textMuted),
             ),
           ),
           Expanded(
@@ -535,7 +535,7 @@ class AboutCard extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           descriptionKey.tr(),
-          style: TextStyle(fontSize: 11, color: tokens.divider),
+          style: TextStyle(fontSize: 11, color: tokens.textMuted),
         ),
         const SizedBox(height: 10),
         KeyValueRow(labelKey: 'about.version', value: kAppVersion),
@@ -547,7 +547,7 @@ class AboutCard extends StatelessWidget {
         const SizedBox(height: 10),
         Text(
           'about.notice'.tr(),
-          style: TextStyle(fontSize: 10.5, color: tokens.divider),
+          style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
         ),
       ],
     );

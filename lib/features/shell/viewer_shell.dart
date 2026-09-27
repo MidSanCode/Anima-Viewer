@@ -308,7 +308,7 @@ class _TopBar extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         children: <Widget>[
-          Icon(Icons.smart_display_outlined, size: 16, color: tokens.divider),
+          Icon(Icons.smart_display_outlined, size: 16, color: tokens.textMuted),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -492,7 +492,7 @@ class ViewerStatusBar extends ConsumerWidget {
                       'time': runtime.time.toStringAsFixed(2),
                     },
                   ),
-            style: TextStyle(fontSize: 10.5, color: tokens.divider),
+            style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
           ),
           const Spacer(),
           Text(
@@ -501,7 +501,7 @@ class ViewerStatusBar extends ConsumerWidget {
                 'value': viewport.zoom.toStringAsFixed(2),
               },
             ),
-            style: TextStyle(fontSize: 10.5, color: tokens.divider),
+            style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
           ),
         ],
       ),
@@ -556,7 +556,7 @@ class _BootFailure extends StatelessWidget {
               SelectableText(
                 message,
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11, color: tokens.divider),
+                style: TextStyle(fontSize: 11, color: tokens.textMuted),
               ),
               const SizedBox(height: 16),
               FilledButton.tonal(

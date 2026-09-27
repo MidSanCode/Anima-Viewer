@@ -115,7 +115,7 @@ class MotionsPanel extends ConsumerWidget {
                 'duration': playback.duration.toStringAsFixed(2),
               },
             ),
-            style: TextStyle(fontSize: 11, color: tokens.divider),
+            style: TextStyle(fontSize: 11, color: tokens.textMuted),
           ),
         ],
       ),
@@ -163,7 +163,7 @@ class _MotionTile extends StatelessWidget {
           ),
           Text(
             '${Fmt.duration(duration)} · ${loop ? 'motion.loop'.tr() : 'viewer.motions.once'.tr()}',
-            style: TextStyle(fontSize: 10, color: tokens.divider),
+            style: TextStyle(fontSize: 10, color: tokens.textMuted),
           ),
         ],
       ),
@@ -213,7 +213,7 @@ class ExpressionsPanel extends ConsumerWidget {
                 trailing: Icon(
                   Icons.chevron_right,
                   size: 16,
-                  color: tokens.divider,
+                  color: tokens.textMuted,
                 ),
                 child: Text(
                   '${asJsonMap(raw)['name'] ?? 'expression'}',
@@ -229,7 +229,7 @@ class ExpressionsPanel extends ConsumerWidget {
                 trailing: Icon(
                   Icons.chevron_right,
                   size: 16,
-                  color: tokens.divider,
+                  color: tokens.textMuted,
                 ),
                 child: Text(
                   '${asJsonMap(raw)['name'] ?? 'pose'}',

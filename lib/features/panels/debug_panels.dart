@@ -56,7 +56,7 @@ class ParamsPanel extends ConsumerWidget {
           const SizedBox(height: 4),
           Text(
             'viewer.params.hint'.tr(),
-            style: TextStyle(fontSize: 10.5, color: tokens.divider),
+            style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
           ),
         ],
       ),
@@ -96,7 +96,7 @@ class _ParamSlider extends StatelessWidget {
             ),
             Text(
               value.toStringAsFixed(2),
-              style: TextStyle(fontSize: 10.5, color: tokens.divider),
+              style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
             ),
           ],
         ),

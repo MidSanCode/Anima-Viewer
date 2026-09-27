@@ -66,7 +66,7 @@ class PerformancePanel extends ConsumerWidget {
             capabilities.methods.isEmpty
                 ? 'viewer.performance.noCapabilities'.tr()
                 : (capabilities.methods.toList()..sort()).join(' · '),
-            style: TextStyle(fontSize: 10.5, color: tokens.divider),
+            style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
           ),
         ],
       ),
@@ -141,7 +141,7 @@ class ExportPanel extends ConsumerWidget {
           SectionHeader(titleKey: 'viewer.export.section.package'),
           Text(
             'viewer.export.packageHint'.tr(),
-            style: TextStyle(fontSize: 10.5, color: tokens.divider),
+            style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
           ),
           const SizedBox(height: 8),
           Align(
@@ -275,7 +275,7 @@ class IntegrationPanel extends ConsumerWidget {
         children: <Widget>[
           Text(
             'viewer.integration.hint'.tr(),
-            style: TextStyle(fontSize: 10.5, color: tokens.divider),
+            style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
           ),
           const SizedBox(height: 8),
           for (final (labelKey, code) in snippets) ...<Widget>[

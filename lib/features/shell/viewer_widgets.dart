@@ -43,7 +43,7 @@ class NoticeBanner extends ConsumerWidget {
             NoticeLevel.error => tokens.danger,
             NoticeLevel.warning => tokens.warning,
             NoticeLevel.success => tokens.accentSecondary,
-            NoticeLevel.info => tokens.divider,
+            NoticeLevel.info => tokens.textMuted,
           },
           titleKey: notice.messageKey,
           args: notice.args,
@@ -106,14 +106,14 @@ class _Banner extends StatelessWidget {
               child: Text(
                 message!,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 10.5, color: tokens.divider),
+                style: TextStyle(fontSize: 10.5, color: tokens.textMuted),
               ),
             ),
           ],
           if (onDismiss != null)
             InkWell(
               onTap: onDismiss,
-              child: Icon(Icons.close, size: 14, color: tokens.divider),
+              child: Icon(Icons.close, size: 14, color: tokens.textMuted),
             ),
         ],
       ),

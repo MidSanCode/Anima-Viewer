@@ -41,7 +41,7 @@ class PanelFrame extends StatelessWidget {
             child: Row(
               children: <Widget>[
                 if (icon != null) ...<Widget>[
-                  Icon(icon, size: 14, color: tokens.divider),
+                  Icon(icon, size: 14, color: tokens.textMuted),
                   const SizedBox(width: 6),
                 ],
                 Expanded(

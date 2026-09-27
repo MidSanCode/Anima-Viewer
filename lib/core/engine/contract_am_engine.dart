@@ -5,23 +5,46 @@
 /// 真引擎的方法面是 `project.load` / `doc.command` / `runtime.advance` /
 /// `runtime.scene` / `motion.*`。本类负责双向翻译：
 ///
-/// * 打开工程：`project.open` → `project.load`，并解析 spec 层；
-/// * 结构编辑：`doc.command` → `doc.command`（形状一致，直接透传）；
+/// * 打开工程：`project.open` → `project.load` + `project.spec`，并解析描述层；
+/// * 文档编辑：**影子文档**（[LocalDocument]）持有编辑真值，`doc.command`
+///   先在影子上生效，再经 [hostDocToEngineSpec] 投影成引擎 `Spec` 用
+///   `project.set_spec` 一次性推给引擎求值；
 /// * 运行时：`runtime.step` → `runtime.advance` + 自动效果在宿主侧模拟；
 /// * 场景：`runtime.scene`（引擎 JSON）→ [AmScene]（降级画布直接绘制）。
 ///
+/// ## 为什么编辑不能直接透传
+///
+/// 引擎 `doc.command` 的 `op` 是**下划线**形式，而且只覆盖模型结构
+/// （`node_create` / `mesh_set` / `keyform_record` / `parameter_add`…）；
+/// 物理、动作、表情、姿势、设置**根本没有编辑命令**。UI 用的是点号 op
+/// （`physics.add_setting` / `expression.create` / `settings.set`…），
+/// 透传只会得到「命令无法解析」。所以：
+///
+/// * 编辑能力由影子文档提供（它已经实现全部 55 个宿主 op、撤销重做、绘制顺序）；
+/// * 影子文档投影成 `Spec` 交给引擎，引擎负责求值、命中测试、动作播放；
+/// * 宿主文档整体挂在 `spec/config.json` 的 `__host.doc` 上（`ProjectConfig`
+///   是 `#[serde(flatten)]`，未知键原样往返），因此 `bounds` / `pendulum` /
+///   `in_tangent` 这类引擎无法表达的信息不会在落盘时丢失。
+///
+/// 代价：`project.set_spec` 会重建引擎的 `Document`（撤销栈清空、时钟/参数/
+/// 表情/物理归零），所以**撤销重做由影子文档负责**，每次推送后本类会把
+/// 运行时状态重新压回引擎（见 [_restoreRuntime]）。
+///
 /// 引擎不可用时不走本类 —— [engine_bootstrap.dart] 会降级到
-/// `LocalAmEngine`（内置实现，方法面与 UI 完全一致）。
+/// `LocalAmEngine`（内置方法面与 UI 完全一致）。
 library;
 
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
+import '../project/amproj_reader.dart';
 import '../project/amproj_writer.dart';
 import 'am_engine.dart';
 import 'am_scene_provider.dart';
 import 'am_types.dart';
+import 'engine_spec_codec.dart';
+import 'local_document.dart';
 import 'local_eval.dart';
 
 /// 契约适配引擎。
@@ -30,14 +53,19 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
 
   final AmEngine _ffi;
 
-  /// 引擎侧文档状态（`doc.model` 的缓存）。
-  Map<String, Object?> _model = <String, Object?>{};
-  Map<String, Object?> _specSettings = <String, Object?>{};
-  Map<String, Object?> _specConfig = <String, Object?>{};
-  List<Object?> _motions = <Object?>[];
-  List<Object?> _expressions = <Object?>[];
-  List<Object?> _physics = <Object?>[];
-  List<Object?> _pose = <Object?>[];
+  /// 影子文档：编辑真值。
+  ///
+  /// 引擎没有物理/动作/表情/姿势/设置的编辑命令，宿主 op 又是点号形式，
+  /// 所以编辑先在影子上落地（它实现了全部 55 个宿主 op + 撤销重做 + 绘制
+  /// 顺序），再整体投影成 `Spec` 推给引擎求值。
+  final LocalDocument _shadow = LocalDocument();
+
+  /// 推送 spec 的串行链尾（见 [_pushSpec]）。
+  Future<void> _pushChain = Future<void>.value();
+
+  /// 宿主文档本体（`spec/config.json` 里 `__host.doc` 的那份）。
+  Map<String, Object?> get _doc => _shadow.data;
+
   String? _projectPath;
   String? _projectName;
   String? _displayName;
@@ -180,7 +208,15 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
       case 'doc.redo':
         return _docUndoRedo('doc.redo');
       case 'doc.history':
-        return _call('doc.history');
+        // 引擎侧的撤销栈每推送一次 `set_spec` 就被清空，只有影子文档的
+        // 历史是连续的 —— UI 的撤销/重做必须读它。
+        return <String, Object?>{
+          'entries': _shadow.historyLabels,
+          'can_undo': _shadow.canUndo,
+          'can_redo': _shadow.canRedo,
+          'revision': _cachedRevision,
+          'dirty': false,
+        };
       case 'doc.model':
         return _call('doc.model');
       case 'doc.revision':
@@ -242,12 +278,12 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
 
       // ----- physics -----
       case 'physics.query':
-        return <String, Object?>{'settings': _physics};
+        return <String, Object?>{'settings': asJsonList(_doc['physics'])};
       case 'physics.set':
         if (p['enabled'] != null) _physicsEnabled = asBool(p['enabled']);
         return <String, Object?>{'enabled': _physicsEnabled};
 
-      // ----- motion（编辑走 doc.command 的 spec 层替换）-----
+      // ----- motion（编辑走 doc.command：物理/动作/表情都在影子文档里）-----
       case 'motion.load':
         final name = '${p['motion'] ?? ''}';
         return <String, Object?>{'motion': _findMotion(name)};
@@ -327,13 +363,14 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
   /// 新建工程。
   ///
   /// 引擎的方法面里**没有** `project.create`（`am-format` 有 `Project::create`，
-  /// 但 `am_call` 没暴露它），不过 `project.new` + `project.save` 能拼出同样的
-  /// 结果，而且 spec 由**引擎**写出，宿主不必重复实现模型格式：
+  /// 但 `am_call` 没暴露它），所以：
   ///
-  /// 1. 宿主先落 `info.json` / `registry.json` —— 引擎的 `project.save` 在
-  ///    目标目录已存在时会走 `Project::open`，而它要求这两个文件；
-  /// 2. `project.new` 让引擎建一份空模型（画布默认 1280×720）；
-  /// 3. `project.save` 把完整 spec（含 `spec/model.json`）写盘。
+  /// 1. 宿主先落 `info.json` / `registry.json` / `spec/` —— 引擎的
+  ///    `project.save` 在目标目录已存在时会走 `Project::open`，而它要求
+  ///    `info.json` + `registry.json`；
+  /// 2. 影子文档重置为默认空工程（带一个根部件，与内置实现一致）；
+  /// 3. `project.set_spec` 把投影后的 spec 交给引擎；
+  /// 4. `project.save` 把 spec 落盘（含 `spec/model.json`）。
   ///
   /// UI 侧只需照常调 `project.create`，内置实现与真引擎两条路径行为一致。
   Future<Map<String, Object?>> _projectCreate(Map<String, Object?> p) async {
@@ -358,26 +395,26 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
     );
     // 名字非法时 AmprojWriter 抛 NAME_INVALID，与内置实现一致。
     await AmprojWriter.createDirectory(dir, info: info);
-    await _call('project.new', <String, Object?>{
-      'name': name,
-      'width': 1280.0,
-      'height': 720.0,
-    });
-    // project.new 建出的模型没有任何节点，而内置实现的空工程带一个根部件
-    // （defaultAnimaDocument）—— 补上它，两条路径的新工程才一致。
-    await _call('doc.command', <String, Object?>{
-      'command': <String, Object?>{
-        'op': 'node_create',
-        'kind': 'part',
-        'name': 'Root',
-      },
-    });
-    await _call('project.save', <String, Object?>{'path': dir});
+    // 影子文档重置为空工程（与内置实现同一份默认文档）。
+    _shadow.data = defaultAnimaDocument();
+    _shadow.applyDrawOrder();
+    _cachedRevision = 0;
     _projectPath = dir;
     _projectName = name;
     // 引擎的 project.load/save 都不回传 display_name，直接用刚写下的 info。
     _displayName = info.displayName;
-    await _reloadSpec();
+    _doc['config'] = <String, Object?>{
+      ...asJsonMap(_doc['config']),
+      'project': <String, Object?>{
+        'name': name,
+        'display_name': info.displayName,
+        'author': info.author,
+        'version': '${info.version}',
+      },
+    };
+    // 先把 spec 交给引擎（否则 project.save 会按旧 spec 落盘），再落盘。
+    await _pushSpec();
+    await _call('project.save', <String, Object?>{'path': dir});
     await _syncFromEngine();
     return <String, Object?>{
       'path': dir,
@@ -389,6 +426,11 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
     };
   }
 
+  /// 打开工程。
+  ///
+  /// `project.load` 让引擎装载 spec（校验、求值都由它负责），随后
+  /// `project.spec` 把描述层取回来还原影子文档。宿主扩展通道
+  /// （`config.__host.doc`）存在时直接用原件，保证引擎表达不了的信息不丢。
   Future<Map<String, Object?>> _projectOpen(Map<String, Object?> p) async {
     final path = '${p['path'] ?? p['source'] ?? ''}';
     if (path.isEmpty) {
@@ -396,10 +438,22 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
     }
     final result = await _call('project.load', <String, Object?>{'path': path});
     _projectPath = path;
-    await _reloadSpec();
-    // 引擎的 project.load 不返回名字；从 spec.model.name 取。
-    _projectName = '${_model['name'] ?? _specSettings['display_name'] ?? ''}';
-    _displayName = _projectName;
+    // 目录模式工程的 info.json 里有 display_name，引擎不返回它。
+    String? displayName;
+    try {
+      final project = await AmprojProject.open(path);
+      displayName = project.displayName;
+    } on Object {
+      // 非 amproj 目录（引擎原生工程）没有 info.json，不是错误。
+    }
+    await _adoptSpec();
+    // 引擎的 project.load 不返回名字；从宿主文档的 config 里取。
+    final projectSection = asJsonMap(asJsonMap(_doc['config'])['project']);
+    final loadedName = '${projectSection['name'] ?? ''}';
+    _projectName = loadedName.isNotEmpty
+        ? loadedName
+        : '${_doc['project_name'] ?? ''}';
+    _displayName = displayName ?? _projectName;
     await _syncFromEngine();
     return <String, Object?>{
       'path': path,
@@ -411,97 +465,95 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
     };
   }
 
-  /// 拉取 spec 层（motions/expressions/physics/pose/settings/config）。
-  Future<void> _reloadSpec() async {
+  /// 从引擎取回描述层并重建影子文档。
+  Future<void> _adoptSpec() async {
     final spec = await _call('project.spec');
-    final model = asJsonMap(spec['model']);
-    _model = <String, Object?>{
-      ...model,
-      // LocalDocument 期望的映射形状。
-      'nodes': <String, Object?>{
-        for (final raw in asJsonList(model['nodes']))
-          if (asJsonMap(raw)['id'] != null)
-            '${asJsonMap(raw)['id']}': asJsonMap(raw),
-      },
-      'parameters': <String, Object?>{
-        for (final raw in asJsonList(model['parameters']))
-          if (asJsonMap(raw)['id'] != null)
-            '${asJsonMap(raw)['id']}': asJsonMap(raw),
-      },
-      'root': _rootIdFrom(model),
-    };
-    // 动作归一化：UI 期望 name/loop/curves[].param；引擎给 looping/parameter。
-    _motions = <Object?>[
-      for (final raw in asJsonList(spec['motions'])) _normalizeMotion(raw),
-    ];
-    // 表情归一化：UI 期望 name/params；引擎给 id/parameters[]。
-    _expressions = <Object?>[
-      for (final raw in asJsonList(spec['expressions']))
-        _normalizeExpression(raw),
-    ];
-    final physicsSpec = asJsonMap(spec['physics']);
-    _physics = asJsonList(physicsSpec['settings']);
-    final poseSpec = asJsonMap(spec['pose']);
-    _pose = asJsonList(poseSpec['groups']);
-    _specSettings = asJsonMap(spec['settings']);
-    _specConfig = asJsonMap(spec['config']);
+    _shadow.data = hostDocFromSpec(spec, projectName: _projectName);
+    _shadow.applyDrawOrder();
+    _cachedRevision = 0;
   }
 
-  Map<String, Object?> _normalizeMotion(Object? raw) {
-    final motion = asJsonMap(raw);
-    return <String, Object?>{
-      'id': '${motion['id'] ?? motion['name']}',
-      'name': '${motion['name'] ?? motion['id'] ?? 'motion'}',
-      'duration': asDouble(motion['duration'], 0),
-      'loop': asBool(motion['looping'], true),
-      'fps': asDouble(motion['fps'], 60),
-      'fade_in': asDouble(motion['fade_in'], 0),
-      'fade_out': asDouble(motion['fade_out'], 0),
-      'curves': <Object?>[
-        for (final rawCurve in asJsonList(motion['curves']))
-          <String, Object?>{
-            'param':
-                '${asJsonMap(rawCurve)['parameter'] ?? asJsonMap(rawCurve)['param'] ?? ''}',
-            'keys': <Object?>[
-              for (final rawKey in asJsonList(asJsonMap(rawCurve)['keys']))
-                <String, Object?>{
-                  'time': asDouble(asJsonMap(rawKey)['time']),
-                  'value': asDouble(asJsonMap(rawKey)['value']),
-                  'interp': '${asJsonMap(rawKey)['interp'] ?? 'linear'}',
-                  'in_tangent': asDouble(asJsonMap(rawKey)['in_tangent'], 0),
-                  'out_tangent': asDouble(asJsonMap(rawKey)['out_tangent'], 0),
-                },
-            ],
-          },
-      ],
-    };
+  /// 把影子文档投影成引擎 `Spec` 并整体替换。
+  ///
+  /// `project.set_spec` 会重建引擎的 `Document`：撤销栈、时钟、动作播放、
+  /// 表情全部归零（参数值会保留，见 [_restoreRuntime]）。因此推送之后必须
+  /// 调用 [_restoreRuntime]。
+  ///
+  /// 串行化：并发的推送会互相覆盖（都是「整份替换」），所以后到的推送等前
+  /// 一个结束再跑 —— 绝不静默丢掉一次编辑。
+  Future<void> _pushSpec() {
+    final previous = _pushChain;
+    final completer = Completer<void>();
+    _pushChain = completer.future;
+    return previous.then((_) async {
+      try {
+        await _call('project.set_spec', <String, Object?>{
+          'spec': hostDocToEngineSpec(
+            _doc,
+            projectName: _projectName ?? '${_doc['name'] ?? 'model'}',
+          ),
+        });
+      } finally {
+        completer.complete();
+      }
+    });
   }
 
-  Map<String, Object?> _normalizeExpression(Object? raw) {
-    final expression = asJsonMap(raw);
-    final parameters = <String, Object?>{};
-    for (final rawEntry in asJsonList(expression['parameters'])) {
-      final entry = asJsonMap(rawEntry);
-      parameters['${entry['parameter'] ?? entry['param']}'] = asDouble(
-        entry['value'],
-      );
+  /// 推送 spec 后恢复运行时状态。
+  ///
+  /// `project.set_spec` 会**保留**存活参数的值（`ParamStore::sync_with_model`
+  /// 保留旧值、补默认值、按范围钳制），所以参数不必重放 —— 各面板拖动滑块时
+  /// 每次都会推送，重放整张参数表会把开销放大成参数个数倍。
+  /// 真正被 `set_spec` 清掉的是时钟、动作播放和表情，这里补回来。
+  Future<void> _restoreRuntime() async {
+    if (_clock != 0) {
+      await _call('runtime.set_time', <String, Object?>{'time': _clock});
     }
-    return <String, Object?>{
-      'id': '${expression['id'] ?? expression['name']}',
-      'name': '${expression['name'] ?? expression['id'] ?? 'expression'}',
-      'fade_in': asDouble(expression['fade_in'], 0),
-      'fade_out': asDouble(expression['fade_out'], 0),
-      'params': parameters,
-    };
+    final motion = _playingMotion;
+    if (motion != null) {
+      final found = _findMotion(motion);
+      if (found == null) {
+        _playingMotion = null;
+        _motionPlaying = false;
+      } else {
+        try {
+          await _call('motion.play', <String, Object?>{
+            'id': engineMotionId(found),
+            'looping': asBool(found['loop']),
+          });
+          if (_motionTime > 0) {
+            await _call('motion.seek', <String, Object?>{'time': _motionTime});
+          }
+        } on AmException {
+          _playingMotion = null;
+          _motionPlaying = false;
+        }
+      }
+    }
+    final expression = _expression;
+    if (expression != null) {
+      final found = _findExpression(expression);
+      if (found == null) {
+        _expression = null;
+      } else {
+        try {
+          await _call('expression.set', <String, Object?>{
+            'id': engineExpressionId(found),
+            'weight': 1.0,
+          });
+        } on AmException {
+          _expression = null;
+        }
+      }
+    }
   }
 
-  String? _rootIdFrom(Map<String, Object?> model) {
-    // 引擎的节点用 parent 指针表达树；root 是没有 parent 的 part。
-    for (final raw in asJsonList(model['nodes'])) {
-      final node = asJsonMap(raw);
-      if (node['parent'] == null) return '${node['id']}';
-    }
-    return null;
+  /// 推送 spec + 恢复运行时 + 刷新场景（每次编辑后的固定动作）。
+  Future<void> _commit() async {
+    await _pushSpec();
+    await _restoreRuntime();
+    await _syncFromEngine();
+    await refreshScene();
   }
 
   Future<void> _syncFromEngine() async {
@@ -514,12 +566,35 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
       });
     final state = await _call('runtime.state');
     _clock = asDouble(state['time']);
+    final motion = asJsonMap(state['motion']);
+    final motionId = '${motion['id'] ?? ''}';
     _motionPlaying =
-        asBool(state['paused']) == false &&
-        '${state['motion'] ?? ''}'.isNotEmpty;
-    _playingMotion = '${state['motion'] ?? ''}'.isEmpty
+        asBool(state['paused']) == false && asBool(motion['playing']);
+    // 引擎给的是引擎 id，换回宿主动作名（UI 用名字）。
+    _playingMotion = motionId.isEmpty
         ? null
-        : '${state['motion']}';
+        : _motionNameForEngineId(motionId);
+    _motionTime = asDouble(motion['time'], _motionTime);
+    final expressionId = '${state['expression'] ?? ''}';
+    if (expressionId.isNotEmpty) {
+      _expression = _expressionNameForEngineId(expressionId);
+    }
+  }
+
+  String? _motionNameForEngineId(String id) {
+    for (final raw in asJsonList(_doc['motions'])) {
+      final motion = asJsonMap(raw);
+      if (engineMotionId(motion) == id) return '${motion['name']}';
+    }
+    return null;
+  }
+
+  String? _expressionNameForEngineId(String id) {
+    for (final raw in asJsonList(_doc['expressions'])) {
+      final expression = asJsonMap(raw);
+      if (engineExpressionId(expression) == id) return '${expression['name']}';
+    }
+    return null;
   }
 
   Future<Map<String, Object?>> _projectSave(Map<String, Object?> p) async {
@@ -546,6 +621,7 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
       'open': _projectPath != null,
       'path': _projectPath,
       'name': _projectName,
+      'display_name': _displayName,
       'revision': _revision(),
       'spec_files': const <Object?>[],
     };
@@ -555,84 +631,84 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
   // doc
   // ---------------------------------------------------------------------------
 
-  int _revision() {
-    // 引擎在 doc.history 里有 revision。
-    return _cachedRevision;
-  }
+  int _revision() => _cachedRevision;
 
   int _cachedRevision = 0;
 
+  /// 执行一条宿主命令。
+  ///
+  /// 引擎的 `doc.command` 只认下划线 op 且没有物理/动作/表情/姿势/设置编辑，
+  /// 所以这里先在**影子文档**上生效（全部 55 个宿主 op + 撤销重做），
+  /// 再把结果整体投影成 `Spec` 推给引擎求值。返回影子文档的修订号。
   Future<Map<String, Object?>> _docCommand(Map<String, Object?> p) async {
     final command = asJsonMap(p['command'] ?? p);
-    final result = await _call('doc.command', <String, Object?>{
-      'command': command,
-    });
-    _cachedRevision = asInt(result['revision'], _cachedRevision + 1);
-    // 结构变化后刷新 spec 缓存（motions/expressions 等也可能被改）。
-    await _reloadSpec();
+    if ('${command['op'] ?? ''}'.isEmpty) {
+      throw const AmException('BAD_COMMAND', 'command.op is required');
+    }
+    // 影子文档负责校验与撤销栈；失败会抛 AmException，状态保持不变。
+    _cachedRevision = _shadow.applyCommand(command);
+    await _commit();
     return <String, Object?>{'revision': _cachedRevision};
   }
 
-  /// undo/redo 会改变模型结构，必须像 doc.command 一样刷新 spec 缓存，
-  /// 否则后续 doc.query hierarchy 仍返回旧的节点表。
+  /// 撤销/重做也由影子文档负责 —— 引擎侧每推送一次 `set_spec` 就会清空
+  /// 自己的撤销栈，只有影子文档的历史是连续的。
   Future<Map<String, Object?>> _docUndoRedo(String method) async {
-    final result = await _call(method);
-    _cachedRevision = asInt(result['revision'], _cachedRevision);
-    await _reloadSpec();
-    return <String, Object?>{...result, 'revision': _cachedRevision};
+    final label = method == 'doc.undo'
+        ? (_shadow.canUndo ? _shadow.history.last : null)
+        : null;
+    _cachedRevision = method == 'doc.undo' ? _shadow.undo() : _shadow.redo();
+    await _commit();
+    return <String, Object?>{'label': label, 'revision': _cachedRevision};
   }
 
   Map<String, Object?> _docQuery(Map<String, Object?> p) {
     final path = '${p['path'] ?? ''}';
+    final nodes = asJsonMap(_doc['nodes']);
     switch (path) {
       case 'hierarchy':
         return <String, Object?>{
           'revision': _cachedRevision,
-          'root': _model['root'],
-          'nodes': _model['nodes'],
+          'root': _doc['root'],
+          'nodes': nodes,
+          'art_path': asJsonList(_doc['art_path']),
         };
       case 'node':
-        final id = '${p['id'] ?? ''}';
-        final nodes = asJsonMap(_model['nodes']);
         return <String, Object?>{
           'revision': _cachedRevision,
-          'node': nodes[id],
+          'node': nodes['${p['id'] ?? ''}'],
         };
       case 'parameters':
         return <String, Object?>{
           'revision': _cachedRevision,
-          'parameters': _model['parameters'],
+          'parameters': asJsonMap(_doc['parameters']),
         };
       case 'keyforms':
-        final id = '${p['id'] ?? ''}';
-        final node = asJsonMap(asJsonMap(_model['nodes'])[id]);
+        final node = asJsonMap(nodes['${p['id'] ?? ''}']);
         return <String, Object?>{
           'revision': _cachedRevision,
           'keyforms': asJsonMap(node['keyforms']),
         };
       case 'mesh':
-        final id = '${p['id'] ?? ''}';
-        final node = asJsonMap(asJsonMap(_model['nodes'])[id]);
+        final node = asJsonMap(nodes['${p['id'] ?? ''}']);
         return <String, Object?>{
           'revision': _cachedRevision,
-          'mesh': asJsonMap(node['drawable'])['mesh'],
+          'mesh': asJsonMap(node['mesh']),
         };
       case 'physics':
-        return <String, Object?>{'physics': _physics};
+        return <String, Object?>{'physics': asJsonList(_doc['physics'])};
       case 'motions':
-        return <String, Object?>{'motions': _motions};
+        return <String, Object?>{'motions': asJsonList(_doc['motions'])};
       case 'expressions':
-        return <String, Object?>{'expressions': _expressions};
+        return <String, Object?>{'expressions': asJsonList(_doc['expressions'])};
       case 'settings':
-        return <String, Object?>{'settings': _specSettings};
+        return <String, Object?>{'settings': asJsonMap(_doc['settings'])};
       case 'config':
-        return <String, Object?>{'config': _specConfig};
+        return <String, Object?>{'config': asJsonMap(_doc['config'])};
       case 'pose':
-        return <String, Object?>{'pose': _pose};
+        return <String, Object?>{'pose': asJsonList(_doc['pose'])};
       case 'atlas':
-        return <String, Object?>{
-          'atlas': asJsonList(asJsonMap(_model)['textures']),
-        };
+        return <String, Object?>{'atlas': asJsonList(_doc['atlas'])};
       default:
         throw AmException('UNKNOWN_QUERY', 'unknown doc.query path: $path');
     }
@@ -680,11 +756,9 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
   }
 
   Future<void> _applyAutoEffects(double dt) async {
+    final settings = asJsonMap(_doc['settings']);
     if (_blinkEnabled) {
-      final interval = asDouble(
-        asJsonMap(_specSettings['blink'])['interval'],
-        4,
-      );
+      final interval = asDouble(asJsonMap(settings['blink'])['interval'], 4);
       if (_blinkPhase < 0) {
         _blinkTimer += dt;
         if (_blinkTimer >= math.max(0.6, interval)) {
@@ -705,10 +779,7 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
       }
     }
     if (_breathEnabled) {
-      final period = asDouble(
-        asJsonMap(_specSettings['breath'])['period'],
-        3.5,
-      );
+      final period = asDouble(asJsonMap(settings['breath'])['period'], 3.5);
       final value = math.sin(_clock / math.max(0.5, period) * math.pi * 2);
       await _applyParamByName(<String>['Breath', 'breath'], value);
     }
@@ -721,8 +792,7 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
   }
 
   Future<void> _applyParamByName(List<String> names, double value) async {
-    final parameters = asJsonMap(_model['parameters']);
-    for (final entry in parameters.entries) {
+    for (final entry in asJsonMap(_doc['parameters']).entries) {
       final name = '${asJsonMap(entry.value)['name']}';
       if (names.contains(name)) {
         await _applyParams(<String, Object?>{entry.key: value});
@@ -738,7 +808,7 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
       throw AmException('BAD_COMMAND', 'motion not found: $name');
     }
     await _call('motion.play', <String, Object?>{
-      'id': '${motion['id'] ?? motion['name']}',
+      'id': engineMotionId(motion),
       if (p['loop'] != null) 'looping': asBool(p['loop']),
       if (p['speed'] != null) 'speed': asDouble(p['speed']),
     });
@@ -749,9 +819,17 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
   }
 
   Map<String, Object?>? _findMotion(String name) {
-    for (final motion in _motions) {
-      final item = asJsonMap(motion);
-      if ('${item['name']}' == name) return item;
+    for (final raw in asJsonList(_doc['motions'])) {
+      final motion = asJsonMap(raw);
+      if ('${motion['name']}' == name) return motion;
+    }
+    return null;
+  }
+
+  Map<String, Object?>? _findExpression(String name) {
+    for (final raw in asJsonList(_doc['expressions'])) {
+      final expression = asJsonMap(raw);
+      if ('${expression['name']}' == name) return expression;
     }
     return null;
   }
@@ -763,15 +841,13 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
       await _syncFromEngine();
       return <String, Object?>{'expression': null, 'params': _params};
     }
-    for (final expression in _expressions) {
-      final item = asJsonMap(expression);
-      if ('${item['name']}' != name) continue;
+    final found = _findExpression(name);
+    if (found != null) {
       await _call('expression.set', <String, Object?>{
-        'id': '${item['id'] ?? item['name']}',
+        'id': engineExpressionId(found),
         'weight': 1.0,
       });
       await _syncFromEngine();
-      break;
     }
     return <String, Object?>{'expression': name, 'params': _params};
   }
@@ -1013,27 +1089,25 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
   // ---------------------------------------------------------------------------
 
   Map<String, Object?> _stats() {
-    final nodes = asJsonMap(_model['nodes']);
+    final nodes = asJsonMap(_doc['nodes']);
     var drawables = 0;
     var vertices = 0;
     for (final entry in nodes.entries) {
       final node = asJsonMap(entry.value);
-      final kind = '${node['kind'] ?? node['type'] ?? ''}';
-      if (kind == 'drawable') {
+      if ('${node['type']}' == 'drawable') {
         drawables++;
-        final mesh = asJsonMap(asJsonMap(node['drawable'])['mesh']);
-        vertices += asJsonList(mesh['vertices']).length;
+        vertices += asJsonList(asJsonMap(node['mesh'])['vertices']).length;
       }
     }
     return <String, Object?>{
       'nodes': nodes.length,
       'drawables': drawables,
       'vertices': vertices,
-      'parameters': asJsonMap(_model['parameters']).length,
-      'motions': _motions.length,
-      'expressions': _expressions.length,
-      'physics_settings': _physics.length,
-      'textures': asJsonList(_model['textures']).length,
+      'parameters': asJsonMap(_doc['parameters']).length,
+      'motions': asJsonList(_doc['motions']).length,
+      'expressions': asJsonList(_doc['expressions']).length,
+      'physics_settings': asJsonList(_doc['physics']).length,
+      'textures': asJsonList(_doc['atlas']).length,
       'frame': _clock,
       'fallback': false,
     };
