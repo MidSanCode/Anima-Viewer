@@ -1,5 +1,5 @@
 {
-  "app.title": "Anima Viewer",
+  "app.title": "赋灵 Viewer",
   "app.description": "A production-grade viewer and exporter for 2D rigged animation",
   "app.starting": "Starting engine…",
   "ui.renderError": "The interface failed to render and fell back to a safe view",
@@ -25,6 +25,7 @@
   "settings.section.language": "Language",
   "settings.section.theme": "Theme",
   "settings.section.render": "Rendering",
+  "settings.section.about": "About",
   "settings.language.system": "System",
   "settings.devicePixelRatio": "Device pixel ratio",
   "settings.showGrid": "Show grid",
@@ -189,6 +190,9 @@
   "shortcut.panel.bottom": "Bottom dock",
   "shortcut.panel.fullscreenCanvas": "Fullscreen canvas",
 
-  "about.version": "Version {value}",
+  "about.version": "Version",
+  "about.build": "Build",
+  "about.developer": "Developer",
+  "about.developerName": "Developed by MSC MidSanCode",
   "about.notice": "This software is an independent implementation; no third-party commercial product names or trademarks appear in its code or interface."
 }

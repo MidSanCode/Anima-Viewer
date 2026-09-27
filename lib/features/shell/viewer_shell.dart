@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/engine/engine_bootstrap.dart';
 import '../../core/i18n/l10n.dart';
 import '../../core/layout/panel_frame.dart';
+import '../../core/platform/window_title.dart';
 import '../../core/state/engine_providers.dart';
 import '../../core/state/project_controller.dart';
 import '../../core/state/runtime_controller.dart';
@@ -18,6 +19,7 @@ import '../../core/state/settings_controller.dart';
 import '../../core/state/ui_controllers.dart';
 import '../../core/theme/app_theme.dart';
 import '../canvas/viewer_canvas.dart';
+import '../common/widgets.dart';
 import '../panels/debug_panels.dart';
 import '../panels/playback_panels.dart';
 import '../panels/report_panels.dart';
@@ -122,90 +124,96 @@ class _ViewerShellState extends ConsumerState<ViewerShell>
     final tokens = AppTheme.of(context);
     final hasModel = project.hasProject || _sampleLoaded;
 
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyO, control: true): () =>
-            ViewerActions.open(context, ref),
-        const SingleActivator(LogicalKeyboardKey.space): () {
-          final playback = ref.read(viewerPlaybackProvider);
-          if (playback.motion != null) {
-            ref.read(viewerPlaybackProvider.notifier).toggle();
-            final runtime = ref.read(runtimeProvider);
-            if (playback.playing) {
-              ref.read(runtimeProvider.notifier).pause();
-            } else if (runtime.motion != null) {
-              ref.read(runtimeProvider.notifier).play(runtime.motion!);
+    return WindowTitleSync(
+      title: composeWindowTitle(
+        context,
+        projectPath: project.path ?? project.projectDir,
+      ),
+      child: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.keyO, control: true): () =>
+              ViewerActions.open(context, ref),
+          const SingleActivator(LogicalKeyboardKey.space): () {
+            final playback = ref.read(viewerPlaybackProvider);
+            if (playback.motion != null) {
+              ref.read(viewerPlaybackProvider.notifier).toggle();
+              final runtime = ref.read(runtimeProvider);
+              if (playback.playing) {
+                ref.read(runtimeProvider.notifier).pause();
+              } else if (runtime.motion != null) {
+                ref.read(runtimeProvider.notifier).play(runtime.motion!);
+              }
             }
-          }
-        },
-        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
-            ref.read(viewportProvider.notifier).requestFit(),
-      },
-      child: Focus(
-        autofocus: true,
-        child: DropTarget(
-          onDragEntered: (_) => setState(() => _dragging = true),
-          onDragExited: (_) => setState(() => _dragging = false),
-          onDragDone: (details) async {
-            setState(() => _dragging = false);
-            if (details.files.isEmpty) return;
-            await ViewerActions.openDropped(ref, details.files.first.path);
           },
-          child: Stack(
-            children: <Widget>[
-              Scaffold(
-                backgroundColor: AppTheme.of(context).panelBackground,
-                body: Column(
-                  children: <Widget>[
-                    _TopBar(
-                      onOpen: () => ViewerActions.open(context, ref),
-                      onScreenshot: () =>
-                          ViewerActions.screenshot(ref, _boundaryKey),
-                      onPreferences: () => _showPreferences(context),
-                      onAbout: () => _showAbout(context),
-                    ),
-                    NoticeBanner(boot: boot),
-                    Expanded(
-                      child: hasModel
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: <Widget>[
-                                Expanded(
-                                  child: ViewerCanvas(
-                                    boundaryKey: _boundaryKey,
+          const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
+              ref.read(viewportProvider.notifier).requestFit(),
+        },
+        child: Focus(
+          autofocus: true,
+          child: DropTarget(
+            onDragEntered: (_) => setState(() => _dragging = true),
+            onDragExited: (_) => setState(() => _dragging = false),
+            onDragDone: (details) async {
+              setState(() => _dragging = false);
+              if (details.files.isEmpty) return;
+              await ViewerActions.openDropped(ref, details.files.first.path);
+            },
+            child: Stack(
+              children: <Widget>[
+                Scaffold(
+                  backgroundColor: AppTheme.of(context).panelBackground,
+                  body: Column(
+                    children: <Widget>[
+                      _TopBar(
+                        onOpen: () => ViewerActions.open(context, ref),
+                        onScreenshot: () =>
+                            ViewerActions.screenshot(ref, _boundaryKey),
+                        onPreferences: () => _showPreferences(context),
+                        onAbout: () => _showAbout(context),
+                      ),
+                      NoticeBanner(boot: boot),
+                      Expanded(
+                        child: hasModel
+                            ? Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: <Widget>[
+                                  Expanded(
+                                    child: ViewerCanvas(
+                                      boundaryKey: _boundaryKey,
+                                    ),
                                   ),
-                                ),
-                                _PanelColumn(
-                                  panels: _panels,
-                                  index: _panelIndex,
-                                  onIndexChanged: (index) =>
-                                      setState(() => _panelIndex = index),
-                                ),
-                              ],
-                            )
-                          : ViewerStartPage(
-                              onUseSample: () {
-                                setState(() => _sampleLoaded = true);
-                              },
-                            ),
-                    ),
-                    const ViewerStatusBar(),
-                  ],
-                ),
-              ),
-              if (_dragging)
-                IgnorePointer(
-                  child: Container(
-                    color: tokens.accentSecondary.withValues(alpha: 0.12),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.file_open_outlined,
-                      size: 48,
-                      color: tokens.accentSecondary,
-                    ),
+                                  _PanelColumn(
+                                    panels: _panels,
+                                    index: _panelIndex,
+                                    onIndexChanged: (index) =>
+                                        setState(() => _panelIndex = index),
+                                  ),
+                                ],
+                              )
+                            : ViewerStartPage(
+                                onUseSample: () {
+                                  setState(() => _sampleLoaded = true);
+                                },
+                              ),
+                      ),
+                      const ViewerStatusBar(),
+                    ],
                   ),
                 ),
-            ],
+                if (_dragging)
+                  IgnorePointer(
+                    child: Container(
+                      color: tokens.accentSecondary.withValues(alpha: 0.12),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.file_open_outlined,
+                        size: 48,
+                        color: tokens.accentSecondary,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -247,19 +255,7 @@ class _ViewerShellState extends ConsumerState<ViewerShell>
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text('app.title'.tr()),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text('app.description'.tr()),
-            const SizedBox(height: 8),
-            Text(
-              'about.version'.tr(namedArgs: <String, String>{'value': '0.1.0'}),
-            ),
-            const SizedBox(height: 8),
-            Text('about.notice'.tr(), style: const TextStyle(fontSize: 11)),
-          ],
-        ),
+        content: const AboutCard(),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),

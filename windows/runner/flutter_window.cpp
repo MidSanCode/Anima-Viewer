@@ -1,8 +1,18 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <string>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "utils.h"
+
+namespace {
+
+// Method channel used by Dart to set the native window title.
+constexpr char kWindowChannelName[] = "anima/window";
+constexpr char kSetTitleMethod[] = "setTitle";
+
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -27,6 +37,35 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  // Dart cannot change the Win32 caption: the Flutter engine never forwards
+  // MaterialApp.title to the native window (flutter_windows.dll has no
+  // setApplicationSwitcherDescription). So Dart pushes the full title string
+  // over the "anima/window" channel and we apply it with SetWindowTextW,
+  // converting UTF-8 -> UTF-16 here. No user-visible text is hard-coded in C++.
+  window_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), kWindowChannelName,
+          &flutter::StandardMethodCodec::GetInstance());
+  window_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() != kSetTitleMethod) {
+          result->NotImplemented();
+          return;
+        }
+        const auto* title = std::get_if<std::string>(call.arguments());
+        if (title == nullptr) {
+          result->Error("invalid_argument", "title must be a string");
+          return;
+        }
+        const std::wstring wide_title = Utf16FromUtf8(*title);
+        if (HWND handle = GetHandle()) {
+          ::SetWindowTextW(handle, wide_title.c_str());
+        }
+        result->Success();
+      });
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -40,6 +79,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  window_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

@@ -1,5 +1,5 @@
 {
-  "app.title": "Anima 查看器",
+  "app.title": "赋灵 查看器",
   "app.description": "面向 2D 骨骼动画的工程化查看与导出工具",
   "app.starting": "正在启动引擎…",
   "ui.renderError": "界面渲染出错，已降级显示",
@@ -25,6 +25,7 @@
   "settings.section.language": "语言",
   "settings.section.theme": "主题",
   "settings.section.render": "渲染",
+  "settings.section.about": "关于",
   "settings.language.system": "跟随系统",
   "settings.devicePixelRatio": "设备像素比",
   "settings.showGrid": "显示网格",
@@ -189,6 +190,9 @@
   "shortcut.panel.bottom": "底部面板",
   "shortcut.panel.fullscreenCanvas": "画布全屏",
 
-  "about.version": "版本 {value}",
+  "about.version": "版本号",
+  "about.build": "构建号",
+  "about.developer": "开发者",
+  "about.developerName": "由 MSC 钟码开发（MidSanCode）",
   "about.notice": "本软件为独立实现，界面与代码中不包含任何第三方商业软件的商标或名称。"
 }

@@ -1,11 +1,11 @@
 {
-    "name": "anima_viewer",
-    "short_name": "anima_viewer",
+    "name": "Anima Viewer",
+    "short_name": "Anima Viewer",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Anima 查看器",
+    "description": "Anima Viewer - 赋灵 查看器",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

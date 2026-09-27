@@ -1,5 +1,5 @@
 name: anima_viewer
-description: "Anima 查看器：查看与试听 .amproj 模型的动作与表情。"
+description: "Anima Viewer（赋灵 查看器）：查看与试听 .amproj 模型的动作与表情。"
 publish_to: 'none'
 
 version: 0.1.0+1

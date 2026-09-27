@@ -175,6 +175,11 @@ class PreferencesBody extends ConsumerWidget {
             onChanged: (value) =>
                 controller.patch((s) => s.copyWith(showGuides: value)),
           ),
+          SectionHeader(titleKey: 'settings.section.about'),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: AboutCard(),
+          ),
         ],
       ),
     );

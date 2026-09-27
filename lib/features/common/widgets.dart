@@ -4,6 +4,7 @@ library;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/platform/app_info.dart';
 import '../../core/theme/app_theme.dart';
 
 /// 分组标题。
@@ -508,4 +509,47 @@ Future<String?> promptDialog(
   );
   controller.dispose();
   return result;
+}
+
+/// 关于卡片：产品名 / 版本号 / 构建号 / 开发者 / 独立实现声明。
+///
+/// 版本号与构建号来自 `core/platform/app_info.dart`（由 `pubspec.yaml` 的
+/// `version` 派生，见 `test/app_info_test.dart` 的漂移守卫），而不是写死的字符串。
+class AboutCard extends StatelessWidget {
+  const AboutCard({super.key, this.descriptionKey = 'app.description'});
+
+  /// 产品简介的 i18n 键。
+  final String descriptionKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppTheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          'app.title'.tr(),
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          descriptionKey.tr(),
+          style: TextStyle(fontSize: 11, color: tokens.divider),
+        ),
+        const SizedBox(height: 10),
+        KeyValueRow(labelKey: 'about.version', value: kAppVersion),
+        KeyValueRow(labelKey: 'about.build', value: kAppBuildNumber),
+        KeyValueRow(
+          labelKey: 'about.developer',
+          value: 'about.developerName'.tr(),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'about.notice'.tr(),
+          style: TextStyle(fontSize: 10.5, color: tokens.divider),
+        ),
+      ],
+    );
+  }
 }
