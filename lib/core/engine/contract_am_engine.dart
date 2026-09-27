@@ -520,10 +520,9 @@ class ContractAmEngine implements AmEngine, AmSceneProvider {
           await _call('motion.play', <String, Object?>{
             'id': engineMotionId(found),
             'looping': asBool(found['loop']),
+            // 引擎支持从指定时间起播，省掉一次单独 seek。
+            if (_motionTime > 0) 'from_time': _motionTime,
           });
-          if (_motionTime > 0) {
-            await _call('motion.seek', <String, Object?>{'time': _motionTime});
-          }
         } on AmException {
           _playingMotion = null;
           _motionPlaying = false;
