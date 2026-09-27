@@ -102,8 +102,29 @@ jobs:
         if: env.ENGINE_WINDOWS_URL != ''
         shell: pwsh
         run: |
+          # ENGINE_WINDOWS_URL 可以是裸 anima.dll，也可以是打包好的 .zip。
           # 引擎查找顺序包含「exe 同级目录」（ffi_am_engine_io.dart），放这里即可。
-          Invoke-WebRequest -Uri "$env:ENGINE_WINDOWS_URL" -OutFile "build\windows\x64\runner\Release\anima.dll"
+          $dest = "build\windows\x64\runner\Release"
+          $tmp  = Join-Path $env:RUNNER_TEMP "anima-engine"
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          $file = Join-Path $tmp "download.bin"
+          Invoke-WebRequest -Uri "$env:ENGINE_WINDOWS_URL" -OutFile $file
+          $bytes = [IO.File]::ReadAllBytes($file)
+          $dll = $null
+          if ($bytes.Length -gt 4 -and $bytes[0] -eq 0x50 -and $bytes[1] -eq 0x4B) {
+            # ZIP（PK\x03\x04）：解包后在产物里找 anima.dll。
+            # Expand-Archive 只认 .zip 扩展名，所以先改名再解。
+            $zip = Join-Path $tmp "engine.zip"
+            Move-Item $file $zip -Force
+            Expand-Archive -Path $zip -DestinationPath $tmp -Force
+            $dll = Get-ChildItem $tmp -Recurse -Filter anima.dll -File | Select-Object -First 1
+          } else {
+            # 裸动态库：下载下来的就是它本身。
+            $dll = Get-Item $file
+          }
+          if (-not $dll) { throw "anima.dll not found in $env:ENGINE_WINDOWS_URL" }
+          Copy-Item $dll.FullName (Join-Path $dest "anima.dll") -Force
+          Write-Host "injected $($dll.FullName)"
       - name: Package portable zip
         shell: pwsh
         run: |
@@ -176,7 +197,24 @@ jobs:
       - name: Inject engine library (optional)
         if: env.ENGINE_LINUX_URL != ''
         run: |
-          curl -fsSL "$ENGINE_LINUX_URL" -o build/linux/x64/release/bundle/lib/libanima.so
+          # ENGINE_LINUX_URL 可以是裸 libanima.so，也可以是打包好的 .tar.gz / .zip。
+          set -euo pipefail
+          # 放到 bundle/lib/：引擎会在 exe 同级与 exe/lib 下查找。
+          TMP=$(mktemp -d)
+          curl -fsSL "$ENGINE_LINUX_URL" -o "$TMP/download.bin"
+          if tar -tzf "$TMP/download.bin" >/dev/null 2>&1; then
+            tar -xzf "$TMP/download.bin" -C "$TMP"
+          elif unzip -qq -o "$TMP/download.bin" -d "$TMP" >/dev/null 2>&1; then
+            :
+          else
+            # 不是归档 → 下载下来的就是裸库本身。
+            cp "$TMP/download.bin" "$TMP/libanima.so"
+          fi
+          FOUND=$(find "$TMP" -name 'libanima.so' -type f -print -quit)
+          [ -n "$FOUND" ] || { echo "libanima.so not found in $ENGINE_LINUX_URL"; exit 1; }
+          mkdir -p build/linux/x64/release/bundle/lib
+          cp "$FOUND" build/linux/x64/release/bundle/lib/libanima.so
+          echo "injected $FOUND"
       - name: Package tarball
         run: tar -czf anima-viewer-linux-${{ env.BUILD_NAME }}.tar.gz -C build/linux/x64/release/bundle .
       - uses: actions/upload-artifact@v4
@@ -215,11 +253,27 @@ jobs:
       - name: Inject engine library (optional)
         if: env.ENGINE_MACOS_URL != ''
         run: |
-          # dylib 放进 .app/Contents/Frameworks/：dyld 会在可执行文件同级与
-          # @rpath 下查找。先解析出真实 .app 名（不写死产物名）。
-          APP_DIR=$(ls -d build/macos/Build/Products/Release/*.app | head -n 1)
-          mkdir -p "$APP_DIR/Contents/Frameworks"
-          curl -fsSL "$ENGINE_MACOS_URL" -o "$APP_DIR/Contents/Frameworks/libanima.dylib"
+          # ENGINE_MACOS_URL 可以是裸 libanima.dylib，也可以是打包好的 .tar.gz / .zip。
+          set -euo pipefail
+          # 先解析出真实 .app 名（不写死产物名）。Contents/MacOS/ 是 dyld 内置
+          # 加载器实际查的目录；Contents/Frameworks/ 则覆盖走 @rpath 的情形。
+          APP_DIR=$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -type d -print -quit)
+          TMP=$(mktemp -d)
+          curl -fsSL "$ENGINE_MACOS_URL" -o "$TMP/download.bin"
+          if tar -tzf "$TMP/download.bin" >/dev/null 2>&1; then
+            tar -xzf "$TMP/download.bin" -C "$TMP"
+          elif unzip -qq -o "$TMP/download.bin" -d "$TMP" >/dev/null 2>&1; then
+            :
+          else
+            # 不是归档 → 下载下来的就是裸库本身。
+            cp "$TMP/download.bin" "$TMP/libanima.dylib"
+          fi
+          FOUND=$(find "$TMP" -name 'libanima.dylib' -type f -print -quit)
+          [ -n "$FOUND" ] || { echo "libanima.dylib not found in $ENGINE_MACOS_URL"; exit 1; }
+          mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Frameworks"
+          cp "$FOUND" "$APP_DIR/Contents/MacOS/libanima.dylib"
+          cp "$FOUND" "$APP_DIR/Contents/Frameworks/libanima.dylib"
+          echo "injected $FOUND"
       - name: Package app bundle
         run: |
           cd build/macos/Build/Products/Release
