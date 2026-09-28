@@ -56,33 +56,57 @@
 | macOS | `anima-viewer-macos-<版本>.zip` |
 | Web | `anima-viewer-web-<版本>.zip` |
 
-## 需要配置的仓库变量
+## 引擎产物怎么来的
 
-**全部可选**：一个都不配也能构建，只是产物更弱（见下）。
+引擎源码在**另一个仓库**里，本仓库的包默认**不含**引擎；此时应用自动降级到内置实现
+（功能完整、不崩溃，见 `lib/core/engine/engine_bootstrap.dart`）。
 
-### Variables
+**你什么都不用配。** 构建时会自动去引擎仓库的 Releases 里找本平台产物：
 
-Settings → Secrets and variables → Actions → **Variables** 标签页。
+> 从**最新版开始往回**试，最多看 **5 个版本**，取第一个带本平台产物的；
+> 那个版本没有本平台产物就继续回退；最近 5 个版本都没有就**跳过注入** ——
+> 产物用内置实现，构建不会失败。
+
+这样引擎某个平台临时构建不出来（或那次构建没勾那个平台）时，本仓库会自动落在上一个
+能用的版本上，**不需要人工干预**，也不会发一个悄悄退化的包出去。跳过时会在日志里留
+一条 `::warning::`，写明看过哪些版本，便于排查。
+
+### 想钉死地址时才配 Variables
+
+Settings → Secrets and variables → Actions → **Variables**。配了就**不再**自动回退，
+直接用你给的地址：
 
 | 名称 | 管哪个平台 | 指向什么 |
 | --- | --- | --- |
-| `ENGINE_URL` | **全部** | 引擎合集包 `anima-engine-all.zip`（**只配这一个就够**） |
 | `ENGINE_WINDOWS_URL` | Windows 桌面 | `anima.dll`，或内含它的 `.zip` 直链 |
 | `ENGINE_LINUX_URL` | Linux 桌面 | `libanima.so`，或内含它的 `.tar.gz` / `.zip` 直链 |
 | `ENGINE_MACOS_URL` | macOS 桌面 | `libanima.dylib`，或内含它的 `.tar.gz` / `.zip` 直链 |
 | `ENGINE_WEB_URL` | Web | wasm-bindgen 产物 `.zip`（`anima_wasm.js` + `anima_wasm_bg.wasm`） |
 
-**只配 `ENGINE_URL` 一个就够了**（推荐）：合集包里按 `windows/` `linux/`
-`macos/` `android/` `ios/` `web/` 分目录放着各平台产物，每个构建作业只从里面
-取自己平台需要的那几个文件 —— 靠**目录结构**判断归属，不靠固定文件名。
+引擎仓库的资产名固定、不含版本号，所以可以指向「永远最新」：
 
-单独配置优先：某个平台配了自己的 `ENGINE_*_URL` 就用它，没配的平台回落
-`ENGINE_URL`。所以可以「一个合集包打底，个别平台再单独钉一个地址」。
+```text
+ENGINE_WINDOWS_URL = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-windows-x64.zip
+ENGINE_LINUX_URL   = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-linux-x64.tar.gz
+ENGINE_MACOS_URL   = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-macos-universal.tar.gz
+ENGINE_WEB_URL     = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-web.zip
+```
 
-引擎放在**另一个仓库**里，不配的话产物中不含引擎，应用会自动降级到内置实现
-（功能完整、不崩溃，见 `lib/core/engine/engine_bootstrap.dart`）。
+也可以钉到某个具体版本：把 `latest` 换成 tag（如 `0.1.0+12`，`+` 在 URL 里写成 `%2B`）。
 
-每个平台注入的产物形态不同，不是「一个动态库通吃」：
+查看器没有 Android / iOS 工程，所以那边也没有对应的注入步骤和变量 —— 引擎的
+`anima-engine-android.aar` / `anima-engine-ios.xcframework.zip` 是编辑器用的。
+
+另有两个一般不用配的口子，fork 或自建镜像时才需要：
+
+| 名称 | 作用 |
+| --- | --- |
+| `ANIMA_ENGINE_REPO` | 换成别的引擎仓库（默认 `midsancode/anima-engine`） |
+| `ANIMA_ENGINE_API_BASE` | 换成企业版/代理的 API 基址（默认 `https://api.github.com`） |
+
+### 每个平台注入什么
+
+形态不同，不是「一个动态库通吃」：
 
 | 平台 | 注入方式 |
 | --- | --- |
@@ -93,36 +117,8 @@ Settings → Secrets and variables → Actions → **Variables** 标签页。
 | iOS | 解出 `anima.xcframework`，往 `ios/Flutter/{Debug,Release}.xcconfig` 追加 `-force_load`（**静态库必须显式链接**，App Store 不允许内嵌 dylib）；重复注入是幂等的 |
 | Web | 解出 `anima_wasm.js` + `anima_wasm_bg.wasm`，放到 `web/anima_engine/`，浏览器端由入库的 `loader.js` 动态 `import` 起来 |
 
-压缩包会被自动解开并在里面找需要的文件，找不到就**报错**（不会静默地发一个
-没引擎的包出去）。下载到 HTML 错误页之类的东西也会被挡下 —— 会先检查魔数。
-
-### 引擎产物从哪来
-
-引擎源码在另一个仓库（Rust 工作区，产出 12 个 crate）。那个仓库的 Actions
-同样是手动触发，勾 **`publish_release`** 后会把六个平台的引擎产物发成 Release，
-资产名**不含版本号**，因此可以直接用「永远指向最新发布」的地址，配一次长期有效。
-
-最省事的是只配这一个（合集包，推荐）：
-
-```text
-ENGINE_URL = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-all.zip
-```
-
-要单独钉某个平台时才用下面这些（**本仓库只用到 `ENGINE_WEB_URL` 与三个桌面变量**
-—— 查看器没有 Android / iOS 工程，那两个是编辑器用的）：
-
-```text
-ENGINE_WINDOWS_URL = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-windows-x64.zip
-ENGINE_LINUX_URL   = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-linux-x64.tar.gz
-ENGINE_MACOS_URL   = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-macos-universal.tar.gz
-ENGINE_ANDROID_URL = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-android.aar
-ENGINE_IOS_URL     = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-ios.xcframework.zip
-ENGINE_WEB_URL     = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-web.zip
-```
-
-用 `latest` 的代价是「引擎更新后，本仓库下次构建就自动换了引擎版本」，这是有
-意为之：应用与引擎版本不必手动对齐。要锁死某个版本，把 `latest` 换成具体 tag
-（如 `0.1.0+12`，`+` 在 URL 里要写成 `%2B`）。
+下载到 HTML 错误页之类的东西会被挡下 —— 会先检查魔数。但**钉死地址**时找不到产物是
+**报错**（配错了就该响亮地失败）；**自动回退**时找不到是**跳过**（那是正常状态）。
 
 ### Web 的引擎是 wasm
 
@@ -152,7 +148,8 @@ Dart 侧用 `dart:js_interop` 调 JS 导出的 `Engine`，调用面与原生端*
   去 Settings → Actions → General → Workflow permissions 确认默认权限
   没有被锁成只读。
 - **引擎地址必须是可匿名下载的直链**（例如 Release 资产直链）。私有仓库需要带
-  token 的地址，目前没有支持 —— `ENGINE_URL` 与 `ENGINE_*_URL` 都一样。
-- **合集包是「取全集」不是「取最小集」**：它含全部平台产物，所以比单平台资产大
-  （仍是几 MB 量级）。六个平台都要发、或懒得逐个配地址时用它最省事；只发一两个
-  平台、又很在意下载体积时，单独配那几个平台更合适。
+  token 的地址，目前没有支持。
+- **自动回退只看 Release**：引擎仓库只发 `draft`（草稿）不发 Release 时，本仓库
+  找不到任何版本 —— 会跳过注入。
+- **回退有边界（5 个版本）**：超过这个范围引擎还没有某个平台的产物，就跳过注入。
+  某个平台长期没有产物的话，该去引擎仓库确认它的构建是不是一直失败。
