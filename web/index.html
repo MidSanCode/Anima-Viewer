@@ -41,6 +41,21 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <!-- 引擎 wasm 加载（可选，见 web/anima_engine/loader.js）。
+       window.AnimaEngineLoader 是给 Dart 侧看的进度标记：
+         undefined  = 本构建根本没带引擎 → Dart 不等待，直接降级；
+         'pending'  = 正在加载 → Dart 等到 done / error 再决定。
+       onerror 兜住 loader.js 本身取不到（例如未配置 ENGINE_WEB_URL）的情况，
+       否则该模块脚本既不执行、也不派发事件，Dart 会一直等到超时。 -->
+  <script>window.AnimaEngineLoader = 'pending';</script>
+  <script>
+    window.addEventListener('anima-engine-ready', function () {
+      window.AnimaEngineLoader = 'done';
+    });
+  </script>
+  <script type="module" src="anima_engine/loader.js"
+          onerror="window.AnimaEngineLoader='error';window.dispatchEvent(new Event('anima-engine-ready'));"></script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

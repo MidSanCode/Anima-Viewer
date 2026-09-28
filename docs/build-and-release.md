@@ -64,15 +64,60 @@
 
 Settings → Secrets and variables → Actions → **Variables** 标签页。
 
-| 名称 | 作用 |
-| --- | --- |
-| `ENGINE_WINDOWS_URL` | `anima.dll`，或内含它的 `.zip` 直链 |
-| `ENGINE_LINUX_URL` | `libanima.so`，或内含它的 `.tar.gz` / `.zip` 直链 |
-| `ENGINE_MACOS_URL` | `libanima.dylib`，或内含它的 `.tar.gz` / `.zip` 直链 |
+| 名称 | 管哪个平台 | 指向什么 |
+| --- | --- | --- |
+| `ENGINE_WINDOWS_URL` | Windows 桌面 | `anima.dll`，或内含它的 `.zip` 直链 |
+| `ENGINE_LINUX_URL` | Linux 桌面 | `libanima.so`，或内含它的 `.tar.gz` / `.zip` 直链 |
+| `ENGINE_MACOS_URL` | macOS 桌面 | `libanima.dylib`，或内含它的 `.tar.gz` / `.zip` 直链 |
+| `ENGINE_WEB_URL` | Web | wasm-bindgen 产物 `.zip`（`anima_wasm.js` + `anima_wasm_bg.wasm`） |
 
-引擎放在**另一个仓库**里。不配的话，产物中不含引擎动态库，应用会自动降级
-到内置实现（功能完整、不崩溃，见 `lib/core/engine/engine_bootstrap.dart`）。
-压缩包会被自动解开并在里面找对应的动态库，找不到就报错。
+引擎放在**另一个仓库**里，不配的话产物中不含引擎，应用会自动降级到内置实现
+（功能完整、不崩溃，见 `lib/core/engine/engine_bootstrap.dart`）。
+
+每个平台注入的产物形态不同，不是「一个动态库通吃」：
+
+| 平台 | 注入方式 |
+| --- | --- |
+| Windows | 把 `anima.dll` 放到可执行文件旁边 |
+| Linux | 把 `libanima.so` 放进 `bundle/lib/` |
+| macOS | `libanima.dylib` 同时放进 `Contents/MacOS/` 和 `Contents/Frameworks/` |
+| Android | 解出 `.aar` 里的 `jni/<abi>/libanima.so`，放到 `android/app/src/main/jniLibs/<abi>/`，随 APK 打包；应用用 `System.loadLibrary` 那套路径加载 |
+| iOS | 解出 `anima.xcframework`，往 `ios/Flutter/{Debug,Release}.xcconfig` 追加 `-force_load`（**静态库必须显式链接**，App Store 不允许内嵌 dylib）；重复注入是幂等的 |
+| Web | 解出 `anima_wasm.js` + `anima_wasm_bg.wasm`，放到 `web/anima_engine/`，浏览器端由入库的 `loader.js` 动态 `import` 起来 |
+
+压缩包会被自动解开并在里面找需要的文件，找不到就**报错**（不会静默地发一个
+没引擎的包出去）。下载到 HTML 错误页之类的东西也会被挡下 —— 会先检查魔数。
+
+### 引擎产物从哪来
+
+引擎源码在另一个仓库（Rust 工作区，产出 12 个 crate）。那个仓库的 Actions
+同样是手动触发，勾 **`publish_release`** 后会把六个平台的引擎产物发成 Release，
+资产名**不含版本号**，因此可以直接用「永远指向最新发布」的地址，配一次长期有效：
+
+```text
+ENGINE_WINDOWS_URL = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-windows-x64.zip
+ENGINE_LINUX_URL   = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-linux-x64.tar.gz
+ENGINE_MACOS_URL   = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-macos-universal.tar.gz
+ENGINE_ANDROID_URL = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-android.aar
+ENGINE_IOS_URL     = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-ios.xcframework.zip
+ENGINE_WEB_URL     = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-web.zip
+```
+
+用 `latest` 的代价是「引擎更新后，本仓库下次构建就自动换了引擎版本」，这是有
+意为之：应用与引擎版本不必手动对齐。要锁死某个版本，把 `latest` 换成具体 tag
+（如 `0.1.0+12`，`+` 在 URL 里要写成 `%2B`）。
+
+### Web 的引擎是 wasm
+
+Web 端的引擎不走 `dart:ffi`（浏览器里没有），而是走引擎的 wasm-bindgen 产物：
+Dart 侧用 `dart:js_interop` 调 JS 导出的 `Engine`，调用面与原生端**同构**
+（方法名 + JSON 参数 → JSON 信封），所以上层 UI 代码两份完全一样
+（见 `lib/core/engine/web_wasm_am_engine_web.dart`）。
+
+`loader.js` 用**可捕获的动态 `import`** 加载 wasm：未配置 `ENGINE_WEB_URL` 时
+产物不存在，动态 import 会失败并被 `catch` 住，页面照常起来、自动降级 —— 
+不会因为少一个文件就白屏。
+
 
 查看器不需要 Android / iOS 的签名 secrets。
 

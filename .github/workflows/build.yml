@@ -47,14 +47,24 @@ env:
   # 仓库本地开发用的就是 3.44.4（Dart SDK ^3.12.2）。
   FLUTTER_VERSION: '3.44.4'
 
-  # 引擎动态库（可选）。引擎在**另一个仓库**里，本仓库的包默认**不含**
-  # `anima.dll` / `libanima.so`；此时应用自动降级到内置实现（功能完整、不崩溃，
-  # 见 lib/core/engine/engine_bootstrap.dart）。想让产物带上真引擎，在仓库
-  # Settings → Variables 里配置下列变量为「引擎库的直链」，构建时自动注入：
-  #   ENGINE_WINDOWS_URL / ENGINE_LINUX_URL / ENGINE_MACOS_URL
+  # 引擎产物地址（可选）。引擎在**另一个仓库**里，本仓库的包默认**不含**引擎；
+  # 此时应用自动降级到内置实现（功能完整、不崩溃，见
+  # lib/core/engine/engine_bootstrap.dart）。想让产物带上真引擎，在仓库
+  # Settings → Variables 里给下面任一项配一个直链，构建时自动注入：
+  #
+  #   ENGINE_WINDOWS_URL / ENGINE_LINUX_URL / ENGINE_MACOS_URL  桌面，指到库文件
+  #   ENGINE_WEB_URL      Web，指到 wasm-bindgen 的 .zip（anima_wasm.js + _bg.wasm）
+  #
+  # 引擎仓库勾选 publish_release 后会按固定名字发布资产，于是这里可以直接写死
+  # 「永远指向最新发布」的地址，不用每换个版本就改 URL：
+  #   https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-windows-x64.zip
+  #   https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-linux-x64.tar.gz
+  #   https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-macos-universal.tar.gz
+  #   https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-web.zip
   ENGINE_WINDOWS_URL: ${{ vars.ENGINE_WINDOWS_URL }}
   ENGINE_LINUX_URL: ${{ vars.ENGINE_LINUX_URL }}
   ENGINE_MACOS_URL: ${{ vars.ENGINE_MACOS_URL }}
+  ENGINE_WEB_URL: ${{ vars.ENGINE_WEB_URL }}
 
 jobs:
   # 先跑测试再打包：把「代码坏了」挡在制品之前。
@@ -320,9 +330,33 @@ jobs:
           EOF
       - name: Get dependencies
         run: flutter pub get
+      # 引擎 wasm（可选）：下载 wasm-bindgen 产物，放进 web/anima_engine/，
+      # flutter build 会把 web/ 下的文件原样复制进产物。
+      - name: Inject engine (optional)
+        env:
+          ENGINE_WEB_URL: ${{ env.ENGINE_WEB_URL }}
+        if: env.ENGINE_WEB_URL != ''
+        run: |
+          set -euo pipefail
+          ZIP="$RUNNER_TEMP/anima-web.zip"
+          curl -fsSL "$ENGINE_WEB_URL" -o "$ZIP"
+          head -c 2 "$ZIP" | grep -q 'PK' || { echo "::error::$ENGINE_WEB_URL 不是 zip"; exit 1; }
+          rm -rf "$RUNNER_TEMP/engine-web"   # 先清干净：残留会让下面的校验误判为通过
+          unzip -o -q "$ZIP" -d "$RUNNER_TEMP/engine-web"
+          JS=$(find "$RUNNER_TEMP/engine-web" -maxdepth 2 -name 'anima_wasm.js' -type f -print -quit)
+          BG=$(find "$RUNNER_TEMP/engine-web" -maxdepth 2 -name 'anima_wasm_bg.wasm' -type f -print -quit)
+          [ -n "$JS" ] || { echo "::error::zip 里没有 anima_wasm.js"; exit 1; }
+          [ -n "$BG" ] || { echo "::error::zip 里没有 anima_wasm_bg.wasm"; exit 1; }
+          mkdir -p web/anima_engine
+          cp "$JS" "$BG" web/anima_engine/
+          # loader.js 是**入库的源码**（web/anima_engine/loader.js），这里不生成：
+          # 它用可捕获的动态 import 加载 wasm，缺失时静默降级，不用 CI 现场拼 JS。
+          test -f web/anima_engine/loader.js || { echo "::error::缺少 web/anima_engine/loader.js"; exit 1; }
+          ls -l web/anima_engine
       - name: Build web
-        # --no-wasm-dry-run：只出 JS 包，但兼容性扫描会顺着 dart:ffi /
-        # dart:html 一路报错。跳过扫描；反正也不产出 wasm 产物。
+        # --no-wasm-dry-run：跳过 wasm 兼容性扫描。Dart 侧不编译成 wasm
+        # （引擎是独立的 wasm 模块，经 js_interop 调用，见
+        # lib/core/engine/web_wasm_am_engine_web.dart），扫描只会顺着它一路报错。
         run: flutter build web --release --no-wasm-dry-run --dart-define-from-file=config.json
       - name: Package zip
         run: |

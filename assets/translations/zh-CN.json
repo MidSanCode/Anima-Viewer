@@ -38,6 +38,7 @@
   "settings.showGuides": "显示参考线",
 
   "engine.backend.local": "内置引擎",
+  "engine.backend.wasm": "Web 引擎（wasm）",
   "engine.backend.ffi": "原生引擎",
   "engine.warning.fallback": "未找到原生引擎，已切换到内置引擎（功能完整，仅无纹理桥）",
   "engine.error.title": "引擎启动失败",

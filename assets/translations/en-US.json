@@ -38,6 +38,7 @@
   "settings.showGuides": "Show guides",
 
   "engine.backend.local": "Built-in engine",
+  "engine.backend.wasm": "Web engine (wasm)",
   "engine.backend.ffi": "Native engine",
   "engine.warning.fallback": "Native engine not found; switched to the built-in engine (full features except the texture bridge)",
   "engine.error.title": "The engine failed to start",

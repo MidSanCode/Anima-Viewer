@@ -9,6 +9,7 @@ import 'am_types.dart';
 import 'contract_am_engine.dart';
 import 'ffi_am_engine.dart';
 import 'local_am_engine.dart';
+import 'web_wasm_am_engine.dart';
 
 /// 启动结果。
 class EngineBootResult {
@@ -52,6 +53,36 @@ Future<EngineBootResult> bootEngine({
   final notes = <String, Object?>{};
 
   if (!forceLocal) {
+    // Web 端只能走 wasm；原生端这个工厂恒返回 null（见 web_wasm_am_engine_stub）。
+    // 两条路径都把结果包成 ContractAmEngine，所以上面的 UI 完全无感。
+    try {
+      final wasm = await tryCreateWebWasmEngine(
+        width: width,
+        height: height,
+        devicePixelRatio: devicePixelRatio,
+      );
+      if (wasm != null && wasm.isAvailable) {
+        final contract = ContractAmEngine(wasm);
+        await contract.initialize(
+          width: width,
+          height: height,
+          devicePixelRatio: devicePixelRatio,
+        );
+        notes['backend'] = 'wasm';
+        notes['capabilities'] = wasm.capabilities.methods.length;
+        return EngineBootResult(
+          engine: contract,
+          warningKey: null,
+          notes: notes,
+        );
+      }
+      notes['wasm'] = 'module not loaded (no ENGINE_WEB_URL, or load failed)';
+    } on AmException catch (error) {
+      notes['wasm'] = '${error.code}: ${error.message}';
+    } on Object catch (error) {
+      notes['wasm'] = '$error';
+    }
+
     try {
       final ffi = await tryCreateFfiEngine(
         width: width,
