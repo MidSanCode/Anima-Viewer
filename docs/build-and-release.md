@@ -92,7 +92,9 @@ Settings → Secrets and variables → Actions → **Variables** 标签页。
 
 引擎源码在另一个仓库（Rust 工作区，产出 12 个 crate）。那个仓库的 Actions
 同样是手动触发，勾 **`publish_release`** 后会把六个平台的引擎产物发成 Release，
-资产名**不含版本号**，因此可以直接用「永远指向最新发布」的地址，配一次长期有效：
+资产名**不含版本号**，因此可以直接用「永远指向最新发布」的地址，配一次长期有效
+（下表把六个资产都列出来，但**本仓库只用到 `ENGINE_WEB_URL` 与三个桌面变量** ——
+查看器没有 Android / iOS 工程，那两个是编辑器用的）：
 
 ```text
 ENGINE_WINDOWS_URL = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-windows-x64.zip
