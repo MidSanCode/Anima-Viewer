@@ -66,10 +66,18 @@ Settings → Secrets and variables → Actions → **Variables** 标签页。
 
 | 名称 | 管哪个平台 | 指向什么 |
 | --- | --- | --- |
+| `ENGINE_URL` | **全部** | 引擎合集包 `anima-engine-all.zip`（**只配这一个就够**） |
 | `ENGINE_WINDOWS_URL` | Windows 桌面 | `anima.dll`，或内含它的 `.zip` 直链 |
 | `ENGINE_LINUX_URL` | Linux 桌面 | `libanima.so`，或内含它的 `.tar.gz` / `.zip` 直链 |
 | `ENGINE_MACOS_URL` | macOS 桌面 | `libanima.dylib`，或内含它的 `.tar.gz` / `.zip` 直链 |
 | `ENGINE_WEB_URL` | Web | wasm-bindgen 产物 `.zip`（`anima_wasm.js` + `anima_wasm_bg.wasm`） |
+
+**只配 `ENGINE_URL` 一个就够了**（推荐）：合集包里按 `windows/` `linux/`
+`macos/` `android/` `ios/` `web/` 分目录放着各平台产物，每个构建作业只从里面
+取自己平台需要的那几个文件 —— 靠**目录结构**判断归属，不靠固定文件名。
+
+单独配置优先：某个平台配了自己的 `ENGINE_*_URL` 就用它，没配的平台回落
+`ENGINE_URL`。所以可以「一个合集包打底，个别平台再单独钉一个地址」。
 
 引擎放在**另一个仓库**里，不配的话产物中不含引擎，应用会自动降级到内置实现
 （功能完整、不崩溃，见 `lib/core/engine/engine_bootstrap.dart`）。
@@ -92,9 +100,16 @@ Settings → Secrets and variables → Actions → **Variables** 标签页。
 
 引擎源码在另一个仓库（Rust 工作区，产出 12 个 crate）。那个仓库的 Actions
 同样是手动触发，勾 **`publish_release`** 后会把六个平台的引擎产物发成 Release，
-资产名**不含版本号**，因此可以直接用「永远指向最新发布」的地址，配一次长期有效
-（下表把六个资产都列出来，但**本仓库只用到 `ENGINE_WEB_URL` 与三个桌面变量** ——
-查看器没有 Android / iOS 工程，那两个是编辑器用的）：
+资产名**不含版本号**，因此可以直接用「永远指向最新发布」的地址，配一次长期有效。
+
+最省事的是只配这一个（合集包，推荐）：
+
+```text
+ENGINE_URL = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-all.zip
+```
+
+要单独钉某个平台时才用下面这些（**本仓库只用到 `ENGINE_WEB_URL` 与三个桌面变量**
+—— 查看器没有 Android / iOS 工程，那两个是编辑器用的）：
 
 ```text
 ENGINE_WINDOWS_URL = https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-windows-x64.zip
@@ -136,5 +151,8 @@ Dart 侧用 `dart:js_interop` 调 JS 导出的 `Engine`，调用面与原生端*
 - **权限**：`release` 作业声明了 `contents: write`。如果运行时遇到 403，
   去 Settings → Actions → General → Workflow permissions 确认默认权限
   没有被锁成只读。
-- **`ENGINE_*_URL` 必须是可匿名下载的直链**（例如 Release 资产直链）。
-  私有仓库需要带 token 的地址，目前没有支持。
+- **引擎地址必须是可匿名下载的直链**（例如 Release 资产直链）。私有仓库需要带
+  token 的地址，目前没有支持 —— `ENGINE_URL` 与 `ENGINE_*_URL` 都一样。
+- **合集包是「取全集」不是「取最小集」**：它含全部平台产物，所以比单平台资产大
+  （仍是几 MB 量级）。六个平台都要发、或懒得逐个配地址时用它最省事；只发一两个
+  平台、又很在意下载体积时，单独配那几个平台更合适。
