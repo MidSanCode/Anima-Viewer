@@ -97,12 +97,18 @@ ENGINE_WEB_URL     = https://github.com/midsancode/anima-engine/releases/latest/
 查看器没有 Android / iOS 工程，所以那边也没有对应的注入步骤和变量 —— 引擎的
 `anima-engine-android.aar` / `anima-engine-ios.xcframework.zip` 是编辑器用的。
 
-另有两个一般不用配的口子，fork 或自建镜像时才需要：
+另有两个「去哪儿取引擎」的基础地址。它们**已经写死在工作流里**，指向引擎上游仓库
+（`midsancode/anima-engine`），正常情况完全不用动；fork 或自建镜像时才在 Variables
+里配同名变量覆盖，环境变量优先于写死的值：
 
-| 名称 | 作用 |
-| --- | --- |
-| `ANIMA_ENGINE_REPO` | 换成别的引擎仓库（默认 `midsancode/anima-engine`） |
-| `ANIMA_ENGINE_API_BASE` | 换成企业版/代理的 API 基址（默认 `https://api.github.com`） |
+| 名称 | 默认值（写死） | 作用 |
+| --- | --- | --- |
+| `ANIMA_ENGINE_REPO` | `midsancode/anima-engine` | 换成别的引擎仓库 |
+| `ANIMA_ENGINE_API_BASE` | `https://api.github.com` | 换成企业版/代理的 API 基址 |
+
+> 注意这两个是**基础地址**，跟上面那张表的 `ENGINE_*_URL` 不是一回事：这里改的是
+> 「去哪个仓库找」，改完仍然会按最新版往回自动回退；`ENGINE_*_URL` 则是「就用这个
+> 具体地址」，配了就不回退。两者可以只配一个，也可以都配。
 
 ### 每个平台注入什么
 

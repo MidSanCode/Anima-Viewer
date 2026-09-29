@@ -51,6 +51,12 @@ env:
   # 此时应用自动降级到内置实现（功能完整、不崩溃，见
   # lib/core/engine/engine_bootstrap.dart）。
   #
+  # 下面两个是「去哪儿取引擎」的基础地址，**已经写死成引擎上游仓库**，正常情况
+  # 完全不用动。要指到镜像/私有部署时，在仓库 Variables 里配同名变量覆盖即可：
+  #   ANIMA_ENGINE_REPO      默认 midsancode/anima-engine
+  #   ANIMA_ENGINE_API_BASE  默认 https://api.github.com
+  # 环境变量优先于写死的值；没配就用写死的值。
+  #
   # **一般什么都不用配。** 构建时自动去引擎仓库的 Releases 里找本平台产物：
   # 从最新版开始往回试，最多看 5 个版本，取第一个带本平台产物的；那个版本
   # 没有就继续回退；最近 5 个版本都没有就跳过注入（产物用内置实现，构建不会
@@ -65,6 +71,10 @@ env:
   #
   # 引擎仓库的资产名固定、不含版本号，所以也可以直接指向「永远最新」：
   #   https://github.com/midsancode/anima-engine/releases/latest/download/anima-engine-windows-x64.zip
+  # 引擎上游仓库（写死的默认值，见下面的说明）。
+  ANIMA_ENGINE_REPO: ${{ vars.ANIMA_ENGINE_REPO }}
+  ANIMA_ENGINE_API_BASE: ${{ vars.ANIMA_ENGINE_API_BASE }}
+
   ENGINE_WINDOWS_URL: ${{ vars.ENGINE_WINDOWS_URL }}
   ENGINE_LINUX_URL: ${{ vars.ENGINE_LINUX_URL }}
   ENGINE_MACOS_URL: ${{ vars.ENGINE_MACOS_URL }}
@@ -127,8 +137,11 @@ jobs:
         shell: pwsh
         run: |
           $maxBack = 5
-          $api = if ($env:ANIMA_ENGINE_API_BASE) { $env:ANIMA_ENGINE_API_BASE } else { 'https://api.github.com' }
-          $repo = if ($env:ANIMA_ENGINE_REPO) { $env:ANIMA_ENGINE_REPO } else { 'midsancode/anima-engine' }
+          # 基础地址写死成引擎上游仓库；配了同名环境变量则优先用它。
+          $api = 'https://api.github.com'
+          $repo = 'midsancode/anima-engine'
+          if ($env:ANIMA_ENGINE_API_BASE) { $api = $env:ANIMA_ENGINE_API_BASE }
+          if ($env:ANIMA_ENGINE_REPO) { $repo = $env:ANIMA_ENGINE_REPO }
           $assetName = 'anima-engine-windows-x64.zip'
 
           $tmp = Join-Path $env:RUNNER_TEMP 'engine-windows'
@@ -275,8 +288,11 @@ jobs:
           # lib/core/engine/engine_bootstrap.dart），不会让构建失败。
           #
           # API / REPO 一般不用改，默认就是引擎仓库；fork 或自建镜像时才需要。
-          API="${ANIMA_ENGINE_API_BASE:-https://api.github.com}"
-          REPO="${ANIMA_ENGINE_REPO:-midsancode/anima-engine}"
+          # 基础地址写死成引擎上游仓库；配了同名环境变量则优先用它。
+          API='https://api.github.com'
+          REPO='midsancode/anima-engine'
+          if [ -n "${ANIMA_ENGINE_API_BASE:-}" ]; then API="$ANIMA_ENGINE_API_BASE"; fi
+          if [ -n "${ANIMA_ENGINE_REPO:-}" ]; then REPO="$ANIMA_ENGINE_REPO"; fi
           ASSET='anima-engine-linux-x64.tar.gz'
           ASSET_RE='anima-engine-linux-x64\.tar\.gz'
           MAX_BACK=5
@@ -387,8 +403,11 @@ jobs:
           # lib/core/engine/engine_bootstrap.dart），不会让构建失败。
           #
           # API / REPO 一般不用改，默认就是引擎仓库；fork 或自建镜像时才需要。
-          API="${ANIMA_ENGINE_API_BASE:-https://api.github.com}"
-          REPO="${ANIMA_ENGINE_REPO:-midsancode/anima-engine}"
+          # 基础地址写死成引擎上游仓库；配了同名环境变量则优先用它。
+          API='https://api.github.com'
+          REPO='midsancode/anima-engine'
+          if [ -n "${ANIMA_ENGINE_API_BASE:-}" ]; then API="$ANIMA_ENGINE_API_BASE"; fi
+          if [ -n "${ANIMA_ENGINE_REPO:-}" ]; then REPO="$ANIMA_ENGINE_REPO"; fi
           ASSET='anima-engine-macos-universal.tar.gz'
           ASSET_RE='anima-engine-macos-universal\.tar\.gz'
           MAX_BACK=5
@@ -505,8 +524,11 @@ jobs:
           # lib/core/engine/engine_bootstrap.dart），不会让构建失败。
           #
           # API / REPO 一般不用改，默认就是引擎仓库；fork 或自建镜像时才需要。
-          API="${ANIMA_ENGINE_API_BASE:-https://api.github.com}"
-          REPO="${ANIMA_ENGINE_REPO:-midsancode/anima-engine}"
+          # 基础地址写死成引擎上游仓库；配了同名环境变量则优先用它。
+          API='https://api.github.com'
+          REPO='midsancode/anima-engine'
+          if [ -n "${ANIMA_ENGINE_API_BASE:-}" ]; then API="$ANIMA_ENGINE_API_BASE"; fi
+          if [ -n "${ANIMA_ENGINE_REPO:-}" ]; then REPO="$ANIMA_ENGINE_REPO"; fi
           ASSET='anima-engine-web.zip'
           ASSET_RE='anima-engine-web\.zip'
           MAX_BACK=5
