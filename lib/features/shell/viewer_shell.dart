@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/engine/engine_bootstrap.dart';
 import '../../core/i18n/l10n.dart';
 import '../../core/layout/panel_frame.dart';
+import '../../core/platform/safe_area.dart';
 import '../../core/platform/window_title.dart';
 import '../../core/state/engine_providers.dart';
 import '../../core/state/project_controller.dart';
@@ -300,12 +301,19 @@ class _TopBar extends ConsumerWidget {
     final playback = ref.watch(viewerPlaybackProvider);
 
     return Container(
-      height: 40,
+      // 高度要**加上**顶部安全区：条本身长高、背景照样铺到屏幕最上边，内容
+      // 再靠 padding 让开状态栏。直接把整根 Column 包 SafeArea 的话，上面会
+      // 留一条没有背景的空白，看着像渲染坏了。
+      height: context.topBarHeight(40),
       decoration: BoxDecoration(
         color: tokens.panelHeader,
         border: Border(bottom: BorderSide(color: tokens.divider)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: EdgeInsets.only(
+        left: 8,
+        right: 8,
+        top: context.safeTop,
+      ),
       child: Row(
         children: <Widget>[
           Icon(Icons.smart_display_outlined, size: 16, color: tokens.textMuted),
@@ -475,8 +483,13 @@ class ViewerStatusBar extends ConsumerWidget {
     final viewport = ref.watch(viewportProvider);
 
     return Container(
-      height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      // 同上：条长高、背景铺到底，内容靠 padding 让开底部手势条。
+      height: context.bottomBarHeight(24),
+      padding: EdgeInsets.only(
+        left: 10,
+        right: 10,
+        bottom: context.safeBottom,
+      ),
       decoration: BoxDecoration(
         color: tokens.panelHeader,
         border: Border(top: BorderSide(color: tokens.divider)),
