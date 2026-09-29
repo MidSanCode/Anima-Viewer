@@ -151,7 +151,7 @@ jobs:
 
           function Save-Engine([string]$u, [string]$out) {
             if ($u -like 'file://*') { Copy-Item ($u -replace '^file:///', '') $out -Force }
-            else { Invoke-WebRequest -Uri $u -OutFile $out }
+            else { Invoke-WebRequest -Uri $u -OutFile $out -Headers @{ 'User-Agent' = 'anima-ci' } }
           }
 
           $url = $null
@@ -168,16 +168,16 @@ jobs:
               $tag = $rel.tag_name
               $tried += $tag
               $asset = $rel.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
-              if (-not $asset) { Write-Host "  $tag：没有本平台产物，继续回退"; continue }
+              if (-not $asset) { Write-Host "  ${tag}: 没有本平台产物，继续回退"; continue }
               try {
                 Save-Engine $asset.browser_download_url $file
                 $url = $asset.browser_download_url
-                Write-Host "  $tag：取到 $($asset.name)"
+                Write-Host "  ${tag}: 取到 $($asset.name)"
                 break
-              } catch { Write-Host "  $tag：下载失败，继续回退" }
+              } catch { Write-Host "  ${tag}: 下载失败，继续回退" }
             }
             if (-not $url) {
-              Write-Host "::warning::最近 $maxBack 个版本都没有本平台产物（$assetName），跳过引擎注入；产物将用内置实现。看过的版本：$($tried -join ' ')"
+              Write-Host "::warning::最近 $maxBack 个版本都没有本平台产物 ($assetName)，跳过引擎注入；产物将用内置实现。看过的版本: $($tried -join ' ')"
               exit 0
             }
           }
@@ -200,7 +200,7 @@ jobs:
             $dll = $file
           } else {
             $magic = if ($bytes.Length -ge 2) { '{0:X2}{1:X2}' -f $bytes[0], $bytes[1] } else { '??' }
-            throw "既不是 zip 也不是 PE 动态库（前 2 字节 $magic）：$url"
+            throw "既不是 zip 也不是 PE 动态库 (前 2 字节 $magic): $url"
           }
           $dest = 'build\windows\x64\runner\Release'
           New-Item -ItemType Directory -Force -Path $dest | Out-Null
@@ -300,8 +300,10 @@ jobs:
           TMP="$RUNNER_TEMP/engine-linux"
           rm -rf "$TMP"; mkdir -p "$TMP"
 
-          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl -fsSL "$1" -o "$2" ;; esac; }
-          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl -fsSL "$1" ;; esac; }
+          # 带上 User-Agent：GitHub 的 API 对没有 UA 的请求会直接 403。
+          UA='anima-ci (+https://github.com/midsancode/anima-engine)'
+          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl -fsSL -A "$UA" "$1" -o "$2" ;; esac; }
+          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl -fsSL -A "$UA" "$1" ;; esac; }
 
           URL=""
           if [ -n "${ENGINE_LINUX_URL:-}" ]; then
@@ -311,26 +313,33 @@ jobs:
             TRIED=""
             i=1
             while [ "$i" -le "$MAX_BACK" ]; do
-              REL=$(get_json "$API/repos/$REPO/releases?per_page=1&page=$i" || true)
+              set +e
+              REL=$(get_json "$API/repos/$REPO/releases?per_page=1&page=$i")
+              list_rc=$?
+              set -e
               i=$((i + 1))
+              if [ "$list_rc" -ne 0 ]; then
+                echo "::warning::取 ${REPO} 的 Release 列表失败 (curl rc=${list_rc}，可能是限流或网络): ${API}/repos/${REPO}/releases"
+                break
+              fi
               TAG=$(printf '%s' "$REL" | grep -o '"tag_name": *"[^"]*"' | head -n 1 | sed 's/.*: *"//; s/"$//' || true)
               [ -n "$TAG" ] || break
               TRIED="$TRIED $TAG"
               PAT='"browser_download_url": *"[^"]*'"$ASSET_RE"'"'
               CAND=$(printf '%s' "$REL" | grep -o "$PAT" | head -n 1 | sed 's/.*: *"//; s/"$//' || true)
               if [ -z "$CAND" ]; then
-                echo "  $TAG：没有本平台产物，继续回退"
+                echo "  ${TAG}: 没有本平台产物，继续回退"
                 continue
               fi
               if pull "$CAND" "$TMP/download.bin"; then
                 URL="$CAND"
-                echo "  $TAG：取到 $ASSET"
+                echo "  ${TAG}: 取到 ${ASSET}"
                 break
               fi
-              echo "  $TAG：下载失败，继续回退"
+              echo "  ${TAG}: 下载失败，继续回退"
             done
             if [ -z "$URL" ]; then
-              echo "::warning::最近 $MAX_BACK 个版本都没有本平台产物（$ASSET），跳过引擎注入；产物将用内置实现。看过的版本：$TRIED"
+              echo "::warning::最近 ${MAX_BACK} 个版本都没有本平台产物 (${ASSET})，跳过引擎注入；产物将用内置实现。看过的版本: ${TRIED}"
               exit 0
             fi
           fi
@@ -343,7 +352,7 @@ jobs:
             # 不是归档 → 应当是裸库本身。校验 ELF 魔数，免得把 404 页面当成 .so
             # 装进产物（那会让应用在运行期静默降级，问题极难排查）。
             MAGIC=$(od -An -tx1 -N4 "$TMP/download.bin" | tr -d '[:space:]')
-            [ "$MAGIC" = "7f454c46" ] || { echo "::error::$URL 既不是归档也不是 ELF 动态库（前 4 字节 $MAGIC）"; exit 1; }
+            [ "$MAGIC" = "7f454c46" ] || { echo "::error::${URL} 既不是归档也不是 ELF 动态库 (前 4 字节 ${MAGIC})"; exit 1; }
             cp "$TMP/download.bin" "$TMP/x/libanima.so"
           fi
           # 排除 ABI 目录：Android 的 jni/<abi>/libanima.so 与本平台的同名，别拿错。
@@ -415,8 +424,10 @@ jobs:
           TMP="$RUNNER_TEMP/engine-macos"
           rm -rf "$TMP"; mkdir -p "$TMP"
 
-          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl -fsSL "$1" -o "$2" ;; esac; }
-          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl -fsSL "$1" ;; esac; }
+          # 带上 User-Agent：GitHub 的 API 对没有 UA 的请求会直接 403。
+          UA='anima-ci (+https://github.com/midsancode/anima-engine)'
+          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl -fsSL -A "$UA" "$1" -o "$2" ;; esac; }
+          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl -fsSL -A "$UA" "$1" ;; esac; }
 
           URL=""
           if [ -n "${ENGINE_MACOS_URL:-}" ]; then
@@ -426,26 +437,33 @@ jobs:
             TRIED=""
             i=1
             while [ "$i" -le "$MAX_BACK" ]; do
-              REL=$(get_json "$API/repos/$REPO/releases?per_page=1&page=$i" || true)
+              set +e
+              REL=$(get_json "$API/repos/$REPO/releases?per_page=1&page=$i")
+              list_rc=$?
+              set -e
               i=$((i + 1))
+              if [ "$list_rc" -ne 0 ]; then
+                echo "::warning::取 ${REPO} 的 Release 列表失败 (curl rc=${list_rc}，可能是限流或网络): ${API}/repos/${REPO}/releases"
+                break
+              fi
               TAG=$(printf '%s' "$REL" | grep -o '"tag_name": *"[^"]*"' | head -n 1 | sed 's/.*: *"//; s/"$//' || true)
               [ -n "$TAG" ] || break
               TRIED="$TRIED $TAG"
               PAT='"browser_download_url": *"[^"]*'"$ASSET_RE"'"'
               CAND=$(printf '%s' "$REL" | grep -o "$PAT" | head -n 1 | sed 's/.*: *"//; s/"$//' || true)
               if [ -z "$CAND" ]; then
-                echo "  $TAG：没有本平台产物，继续回退"
+                echo "  ${TAG}: 没有本平台产物，继续回退"
                 continue
               fi
               if pull "$CAND" "$TMP/download.bin"; then
                 URL="$CAND"
-                echo "  $TAG：取到 $ASSET"
+                echo "  ${TAG}: 取到 ${ASSET}"
                 break
               fi
-              echo "  $TAG：下载失败，继续回退"
+              echo "  ${TAG}: 下载失败，继续回退"
             done
             if [ -z "$URL" ]; then
-              echo "::warning::最近 $MAX_BACK 个版本都没有本平台产物（$ASSET），跳过引擎注入；产物将用内置实现。看过的版本：$TRIED"
+              echo "::warning::最近 ${MAX_BACK} 个版本都没有本平台产物 (${ASSET})，跳过引擎注入；产物将用内置实现。看过的版本: ${TRIED}"
               exit 0
             fi
           fi
@@ -459,7 +477,7 @@ jobs:
             MAGIC=$(od -An -tx1 -N4 "$TMP/download.bin" | tr -d '[:space:]')
             case "$MAGIC" in
               cffaedfe|cefaedfe|cafebabe|bebafeca) ;;
-              *) echo "::error::$URL 既不是归档也不是 Mach-O 动态库（前 4 字节 $MAGIC）"; exit 1 ;;
+              *) echo "::error::${URL} 既不是归档也不是 Mach-O 动态库 (前 4 字节 ${MAGIC})"; exit 1 ;;
             esac
             cp "$TMP/download.bin" "$TMP/x/libanima.dylib"
           fi
@@ -536,8 +554,10 @@ jobs:
           TMP="$RUNNER_TEMP/engine-web"
           rm -rf "$TMP"; mkdir -p "$TMP"
 
-          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl -fsSL "$1" -o "$2" ;; esac; }
-          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl -fsSL "$1" ;; esac; }
+          # 带上 User-Agent：GitHub 的 API 对没有 UA 的请求会直接 403。
+          UA='anima-ci (+https://github.com/midsancode/anima-engine)'
+          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl -fsSL -A "$UA" "$1" -o "$2" ;; esac; }
+          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl -fsSL -A "$UA" "$1" ;; esac; }
 
           URL=""
           if [ -n "${ENGINE_WEB_URL:-}" ]; then
@@ -547,26 +567,33 @@ jobs:
             TRIED=""
             i=1
             while [ "$i" -le "$MAX_BACK" ]; do
-              REL=$(get_json "$API/repos/$REPO/releases?per_page=1&page=$i" || true)
+              set +e
+              REL=$(get_json "$API/repos/$REPO/releases?per_page=1&page=$i")
+              list_rc=$?
+              set -e
               i=$((i + 1))
+              if [ "$list_rc" -ne 0 ]; then
+                echo "::warning::取 ${REPO} 的 Release 列表失败 (curl rc=${list_rc}，可能是限流或网络): ${API}/repos/${REPO}/releases"
+                break
+              fi
               TAG=$(printf '%s' "$REL" | grep -o '"tag_name": *"[^"]*"' | head -n 1 | sed 's/.*: *"//; s/"$//' || true)
               [ -n "$TAG" ] || break
               TRIED="$TRIED $TAG"
               PAT='"browser_download_url": *"[^"]*'"$ASSET_RE"'"'
               CAND=$(printf '%s' "$REL" | grep -o "$PAT" | head -n 1 | sed 's/.*: *"//; s/"$//' || true)
               if [ -z "$CAND" ]; then
-                echo "  $TAG：没有本平台产物，继续回退"
+                echo "  ${TAG}: 没有本平台产物，继续回退"
                 continue
               fi
               if pull "$CAND" "$TMP/download.bin"; then
                 URL="$CAND"
-                echo "  $TAG：取到 $ASSET"
+                echo "  ${TAG}: 取到 ${ASSET}"
                 break
               fi
-              echo "  $TAG：下载失败，继续回退"
+              echo "  ${TAG}: 下载失败，继续回退"
             done
             if [ -z "$URL" ]; then
-              echo "::warning::最近 $MAX_BACK 个版本都没有本平台产物（$ASSET），跳过引擎注入；产物将用内置实现。看过的版本：$TRIED"
+              echo "::warning::最近 ${MAX_BACK} 个版本都没有本平台产物 (${ASSET})，跳过引擎注入；产物将用内置实现。看过的版本: ${TRIED}"
               exit 0
             fi
           fi
