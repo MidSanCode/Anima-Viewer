@@ -131,6 +131,10 @@ jobs:
       - name: Build release
         run: flutter build windows --release --build-name=$env:BUILD_NAME --build-number=$env:BUILD_NUMBER --dart-define-from-file=config.json
       - name: Inject engine (optional)
+        env:
+          # 带上 token 把 API 配额从匿名 60 次/小时提到 5000，
+          # 避免 runner 共享出口 IP 撞限流（拿不到列表就白跳过注入）。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # 配了 ENGINE_WINDOWS_URL 就直接用这个地址（单平台包 / 裸 anima.dll / 具体版本
         # 直链都行）。没配就自动找：从引擎 Release 最新版开始往回试，最多看 5 个版本，
         # 取第一个带 Windows 产物的；都没有就跳过注入（产物用内置实现，不会失败）。
@@ -276,6 +280,10 @@ jobs:
       - name: Build release
         run: flutter build linux --release --build-name=$BUILD_NAME --build-number=$BUILD_NUMBER --dart-define-from-file=config.json
       - name: Inject engine (optional)
+        env:
+          # 带上 token 把 API 配额从匿名 60 次/小时提到 5000，
+          # 避免 runner 共享出口 IP 撞限流（拿不到列表就白跳过注入）。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # 地址优先用 ENGINE_LINUX_URL；没配就从引擎 Release 最新版开始往回找本平台产物。
         run: |
           set -euo pipefail
@@ -300,10 +308,41 @@ jobs:
           TMP="$RUNNER_TEMP/engine-linux"
           rm -rf "$TMP"; mkdir -p "$TMP"
 
-          # 带上 User-Agent：GitHub 的 API 对没有 UA 的请求会直接 403。
+          # 网络抖动在 CI 上是常态（实测遇到过 curl 56：连接中途断），
+          # 单次失败就放弃太脆。这里重试 3 次、退避 2s/4s。
           UA='anima-ci (+https://github.com/midsancode/anima-engine)'
-          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl -fsSL -A "$UA" "$1" -o "$2" ;; esac; }
-          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl -fsSL -A "$UA" "$1" ;; esac; }
+          # 有 token 就带上：匿名请求每 IP 每小时只有 60 次，runner 出口 IP
+          # 是共享的，容易撞限流。带 token 提到 5000 次。
+          AUTH=""
+          if [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
+            AUTH="Authorization: Bearer ${GH_TOKEN:-$GITHUB_TOKEN}"
+          fi
+          curl_get() { # url [out]
+            local u="$1" out="${2:-}" n=0 delay=2 rc
+            while :; do
+              if [ -n "$out" ]; then
+                if [ -n "$AUTH" ]; then curl -fsSL -A "$UA" -H "$AUTH" "$u" -o "$out"
+                else curl -fsSL -A "$UA" "$u" -o "$out"; fi
+              else
+                if [ -n "$AUTH" ]; then curl -fsSL -A "$UA" -H "$AUTH" "$u"
+                else curl -fsSL -A "$UA" "$u"; fi
+              fi
+              rc=$?
+              [ $rc -eq 0 ] && return 0
+              # 只重试瞬时故障。curl 22 = HTTP >=400（-f 导致），
+              # 那是确定性的（403/404/429），重试只会浪费时间。
+              case $rc in
+                6|7|18|28|35|52|55|56) ;;
+                *) echo "  请求失败 (curl rc=${rc})，不重试" >&2; return ${rc} ;;
+              esac
+              n=$((n + 1))
+              if [ $n -ge 4 ]; then return $rc; fi
+              echo "  网络抖动 (curl rc=${rc})，${delay}s 后重试 ${n}/3" >&2
+              sleep $delay; delay=$((delay * 2))
+            done
+          }
+          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl_get "$1" "$2" ;; esac; }
+          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl_get "$1" ;; esac; }
 
           URL=""
           if [ -n "${ENGINE_LINUX_URL:-}" ]; then
@@ -311,6 +350,7 @@ jobs:
             pull "$URL" "$TMP/download.bin"
           else
             TRIED=""
+            LIST_FAILED=""
             i=1
             while [ "$i" -le "$MAX_BACK" ]; do
               set +e
@@ -319,7 +359,7 @@ jobs:
               set -e
               i=$((i + 1))
               if [ "$list_rc" -ne 0 ]; then
-                echo "::warning::取 ${REPO} 的 Release 列表失败 (curl rc=${list_rc}，可能是限流或网络): ${API}/repos/${REPO}/releases"
+                LIST_FAILED=1
                 break
               fi
               TAG=$(printf '%s' "$REL" | grep -o '"tag_name": *"[^"]*"' | head -n 1 | sed 's/.*: *"//; s/"$//' || true)
@@ -339,7 +379,11 @@ jobs:
               echo "  ${TAG}: 下载失败，继续回退"
             done
             if [ -z "$URL" ]; then
-              echo "::warning::最近 ${MAX_BACK} 个版本都没有本平台产物 (${ASSET})，跳过引擎注入；产物将用内置实现。看过的版本: ${TRIED}"
+              if [ -n "$LIST_FAILED" ]; then
+                echo "::warning::取 ${REPO} 的 Release 列表失败，已跳过引擎注入；产物将用内置实现"
+              else
+                echo "::warning::最近 ${MAX_BACK} 个版本都没有本平台产物 (${ASSET})，跳过引擎注入；产物将用内置实现。看过的版本: ${TRIED}"
+              fi
               exit 0
             fi
           fi
@@ -400,6 +444,10 @@ jobs:
       - name: Build release
         run: flutter build macos --release --build-name=$BUILD_NAME --build-number=$BUILD_NUMBER --dart-define-from-file=config.json
       - name: Inject engine (optional)
+        env:
+          # 带上 token 把 API 配额从匿名 60 次/小时提到 5000，
+          # 避免 runner 共享出口 IP 撞限流（拿不到列表就白跳过注入）。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # 地址优先用 ENGINE_MACOS_URL；没配就从引擎 Release 最新版开始往回找本平台产物。
         run: |
           set -euo pipefail
@@ -424,10 +472,41 @@ jobs:
           TMP="$RUNNER_TEMP/engine-macos"
           rm -rf "$TMP"; mkdir -p "$TMP"
 
-          # 带上 User-Agent：GitHub 的 API 对没有 UA 的请求会直接 403。
+          # 网络抖动在 CI 上是常态（实测遇到过 curl 56：连接中途断），
+          # 单次失败就放弃太脆。这里重试 3 次、退避 2s/4s。
           UA='anima-ci (+https://github.com/midsancode/anima-engine)'
-          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl -fsSL -A "$UA" "$1" -o "$2" ;; esac; }
-          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl -fsSL -A "$UA" "$1" ;; esac; }
+          # 有 token 就带上：匿名请求每 IP 每小时只有 60 次，runner 出口 IP
+          # 是共享的，容易撞限流。带 token 提到 5000 次。
+          AUTH=""
+          if [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
+            AUTH="Authorization: Bearer ${GH_TOKEN:-$GITHUB_TOKEN}"
+          fi
+          curl_get() { # url [out]
+            local u="$1" out="${2:-}" n=0 delay=2 rc
+            while :; do
+              if [ -n "$out" ]; then
+                if [ -n "$AUTH" ]; then curl -fsSL -A "$UA" -H "$AUTH" "$u" -o "$out"
+                else curl -fsSL -A "$UA" "$u" -o "$out"; fi
+              else
+                if [ -n "$AUTH" ]; then curl -fsSL -A "$UA" -H "$AUTH" "$u"
+                else curl -fsSL -A "$UA" "$u"; fi
+              fi
+              rc=$?
+              [ $rc -eq 0 ] && return 0
+              # 只重试瞬时故障。curl 22 = HTTP >=400（-f 导致），
+              # 那是确定性的（403/404/429），重试只会浪费时间。
+              case $rc in
+                6|7|18|28|35|52|55|56) ;;
+                *) echo "  请求失败 (curl rc=${rc})，不重试" >&2; return ${rc} ;;
+              esac
+              n=$((n + 1))
+              if [ $n -ge 4 ]; then return $rc; fi
+              echo "  网络抖动 (curl rc=${rc})，${delay}s 后重试 ${n}/3" >&2
+              sleep $delay; delay=$((delay * 2))
+            done
+          }
+          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl_get "$1" "$2" ;; esac; }
+          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl_get "$1" ;; esac; }
 
           URL=""
           if [ -n "${ENGINE_MACOS_URL:-}" ]; then
@@ -435,6 +514,7 @@ jobs:
             pull "$URL" "$TMP/download.bin"
           else
             TRIED=""
+            LIST_FAILED=""
             i=1
             while [ "$i" -le "$MAX_BACK" ]; do
               set +e
@@ -443,7 +523,7 @@ jobs:
               set -e
               i=$((i + 1))
               if [ "$list_rc" -ne 0 ]; then
-                echo "::warning::取 ${REPO} 的 Release 列表失败 (curl rc=${list_rc}，可能是限流或网络): ${API}/repos/${REPO}/releases"
+                LIST_FAILED=1
                 break
               fi
               TAG=$(printf '%s' "$REL" | grep -o '"tag_name": *"[^"]*"' | head -n 1 | sed 's/.*: *"//; s/"$//' || true)
@@ -463,7 +543,11 @@ jobs:
               echo "  ${TAG}: 下载失败，继续回退"
             done
             if [ -z "$URL" ]; then
-              echo "::warning::最近 ${MAX_BACK} 个版本都没有本平台产物 (${ASSET})，跳过引擎注入；产物将用内置实现。看过的版本: ${TRIED}"
+              if [ -n "$LIST_FAILED" ]; then
+                echo "::warning::取 ${REPO} 的 Release 列表失败，已跳过引擎注入；产物将用内置实现"
+              else
+                echo "::warning::最近 ${MAX_BACK} 个版本都没有本平台产物 (${ASSET})，跳过引擎注入；产物将用内置实现。看过的版本: ${TRIED}"
+              fi
               exit 0
             fi
           fi
@@ -530,6 +614,10 @@ jobs:
       # 引擎 wasm（可选）：下载 wasm-bindgen 产物，放进 web/anima_engine/，
       # flutter build 会把 web/ 下的文件原样复制进产物。
       - name: Inject engine (optional)
+        env:
+          # 带上 token 把 API 配额从匿名 60 次/小时提到 5000，
+          # 避免 runner 共享出口 IP 撞限流（拿不到列表就白跳过注入）。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # 地址优先用 ENGINE_WEB_URL；没配就从引擎 Release 最新版开始往回找本平台产物。
         run: |
           set -euo pipefail
@@ -554,10 +642,41 @@ jobs:
           TMP="$RUNNER_TEMP/engine-web"
           rm -rf "$TMP"; mkdir -p "$TMP"
 
-          # 带上 User-Agent：GitHub 的 API 对没有 UA 的请求会直接 403。
+          # 网络抖动在 CI 上是常态（实测遇到过 curl 56：连接中途断），
+          # 单次失败就放弃太脆。这里重试 3 次、退避 2s/4s。
           UA='anima-ci (+https://github.com/midsancode/anima-engine)'
-          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl -fsSL -A "$UA" "$1" -o "$2" ;; esac; }
-          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl -fsSL -A "$UA" "$1" ;; esac; }
+          # 有 token 就带上：匿名请求每 IP 每小时只有 60 次，runner 出口 IP
+          # 是共享的，容易撞限流。带 token 提到 5000 次。
+          AUTH=""
+          if [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
+            AUTH="Authorization: Bearer ${GH_TOKEN:-$GITHUB_TOKEN}"
+          fi
+          curl_get() { # url [out]
+            local u="$1" out="${2:-}" n=0 delay=2 rc
+            while :; do
+              if [ -n "$out" ]; then
+                if [ -n "$AUTH" ]; then curl -fsSL -A "$UA" -H "$AUTH" "$u" -o "$out"
+                else curl -fsSL -A "$UA" "$u" -o "$out"; fi
+              else
+                if [ -n "$AUTH" ]; then curl -fsSL -A "$UA" -H "$AUTH" "$u"
+                else curl -fsSL -A "$UA" "$u"; fi
+              fi
+              rc=$?
+              [ $rc -eq 0 ] && return 0
+              # 只重试瞬时故障。curl 22 = HTTP >=400（-f 导致），
+              # 那是确定性的（403/404/429），重试只会浪费时间。
+              case $rc in
+                6|7|18|28|35|52|55|56) ;;
+                *) echo "  请求失败 (curl rc=${rc})，不重试" >&2; return ${rc} ;;
+              esac
+              n=$((n + 1))
+              if [ $n -ge 4 ]; then return $rc; fi
+              echo "  网络抖动 (curl rc=${rc})，${delay}s 后重试 ${n}/3" >&2
+              sleep $delay; delay=$((delay * 2))
+            done
+          }
+          pull() { case "$1" in file://*) cp "${1#file://}" "$2" ;; *) curl_get "$1" "$2" ;; esac; }
+          get_json() { case "$1" in file://*) cat "${1#file://}" ;; *) curl_get "$1" ;; esac; }
 
           URL=""
           if [ -n "${ENGINE_WEB_URL:-}" ]; then
@@ -565,6 +684,7 @@ jobs:
             pull "$URL" "$TMP/download.bin"
           else
             TRIED=""
+            LIST_FAILED=""
             i=1
             while [ "$i" -le "$MAX_BACK" ]; do
               set +e
@@ -573,7 +693,7 @@ jobs:
               set -e
               i=$((i + 1))
               if [ "$list_rc" -ne 0 ]; then
-                echo "::warning::取 ${REPO} 的 Release 列表失败 (curl rc=${list_rc}，可能是限流或网络): ${API}/repos/${REPO}/releases"
+                LIST_FAILED=1
                 break
               fi
               TAG=$(printf '%s' "$REL" | grep -o '"tag_name": *"[^"]*"' | head -n 1 | sed 's/.*: *"//; s/"$//' || true)
@@ -593,7 +713,11 @@ jobs:
               echo "  ${TAG}: 下载失败，继续回退"
             done
             if [ -z "$URL" ]; then
-              echo "::warning::最近 ${MAX_BACK} 个版本都没有本平台产物 (${ASSET})，跳过引擎注入；产物将用内置实现。看过的版本: ${TRIED}"
+              if [ -n "$LIST_FAILED" ]; then
+                echo "::warning::取 ${REPO} 的 Release 列表失败，已跳过引擎注入；产物将用内置实现"
+              else
+                echo "::warning::最近 ${MAX_BACK} 个版本都没有本平台产物 (${ASSET})，跳过引擎注入；产物将用内置实现。看过的版本: ${TRIED}"
+              fi
               exit 0
             fi
           fi
