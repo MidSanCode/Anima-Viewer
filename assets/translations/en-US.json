@@ -52,6 +52,7 @@
   "notice.project.imported": "Project imported",
   "notice.project.notOpen": "No project directory is open: use Save As to pick one, or reopen the project",
   "notice.project.webNoDirectory": "A browser build cannot pick a folder; use the desktop build instead",
+  "notice.error.unexpected": "Operation {method} failed; see logs for details",
   "notice.project.validationIssues": "Project validation reported issues",
   "notice.project.exportRejected": "Validation failed; export was refused",
   "notice.project.importNeedsPath": "Choose a .amproj file to import",

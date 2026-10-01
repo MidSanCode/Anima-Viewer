@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../engine/am_engine.dart';
@@ -218,8 +219,12 @@ class ProjectController extends Notifier<ProjectState> {
       return true;
     } on AmException catch (error) {
       _noticeError('project.open', error);
-      state = state.copyWith(busy: false);
       return false;
+    } on Object catch (error) {
+      _noticeUnexpected('project.open', error);
+      return false;
+    } finally {
+      state = state.copyWith(busy: false);
     }
   }
 
@@ -246,8 +251,12 @@ class ProjectController extends Notifier<ProjectState> {
       return true;
     } on AmException catch (error) {
       _noticeError('project.save', error);
-      state = state.copyWith(busy: false);
       return false;
+    } on Object catch (error) {
+      _noticeUnexpected('project.save', error);
+      return false;
+    } finally {
+      state = state.copyWith(busy: false);
     }
   }
 
@@ -272,8 +281,12 @@ class ProjectController extends Notifier<ProjectState> {
       return report;
     } on AmException catch (error) {
       _noticeError('project.validate', error);
-      state = state.copyWith(busy: false);
       return null;
+    } on Object catch (error) {
+      _noticeUnexpected('project.validate', error);
+      return null;
+    } finally {
+      state = state.copyWith(busy: false);
     }
   }
 
@@ -308,8 +321,12 @@ class ProjectController extends Notifier<ProjectState> {
       } else {
         _noticeError('project.export', error);
       }
-      state = state.copyWith(busy: false);
       return null;
+    } on Object catch (error) {
+      _noticeUnexpected('project.export', error);
+      return null;
+    } finally {
+      state = state.copyWith(busy: false);
     }
   }
 
@@ -335,8 +352,12 @@ class ProjectController extends Notifier<ProjectState> {
       return true;
     } on AmException catch (error) {
       _noticeError('project.import', error);
-      state = state.copyWith(busy: false);
       return false;
+    } on Object catch (error) {
+      _noticeUnexpected('project.import', error);
+      return false;
+    } finally {
+      state = state.copyWith(busy: false);
     }
   }
 
@@ -361,6 +382,20 @@ class ProjectController extends Notifier<ProjectState> {
 
   void _notice(String key) =>
       ref.read(notificationsProvider.notifier).warn(key);
+
+  /// 非引擎异常（插件缺失 / 写盘失败 / 目录取不到）的统一提示。
+  ///
+  /// 这类错误以前会让 `busy` 卡住且界面毫无反应；现在既有可读提示，
+  /// 也用 debugPrint 留下异常内容，便于排查。
+  void _noticeUnexpected(String method, Object error) {
+    debugPrint('[project.$method] 未预期的异常: $error');
+    ref
+        .read(notificationsProvider.notifier)
+        .error(
+          'notice.error.unexpected',
+          args: <String, String>{'method': method},
+        );
+  }
 
   void _noticeError(String method, AmException error) {
     // `PROJECT_NOT_OPEN` 有专用文案（说清下一步怎么做）；其余走通用提示。
